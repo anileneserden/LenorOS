@@ -19,10 +19,12 @@ SRC_S = \
 
 SRC_C = \
     kernel/audio/wav.c \
+    kernel/crypto/tls.c \
     kernel/app_manager.c \
     kernel/hexdump.c \
     kernel/kmain.c \
     kernel/power.c \
+    kernel/interrupts.c \
     kernel/serial.c \
     kernel/string.c \
     kernel/drivers/audio/ac97.c \
@@ -30,8 +32,11 @@ SRC_C = \
     kernel/drivers/input/keyboard_ps2.c \
     kernel/drivers/input/mouse_ps2.c \
     kernel/drivers/input/mouse_usb.c \
+    kernel/drivers/net/e1000.c \
     kernel/drivers/storage/ata.c \
+    kernel/drivers/usb/ehci.c \
     kernel/drivers/usb/uhci.c \
+    kernel/drivers/usb/xhci.c \
     kernel/drivers/video/font/font8x8_basic.c \
     kernel/drivers/video/font/font8x16_basic.c \
     kernel/drivers/video/fb.c \
@@ -82,16 +87,11 @@ clean:
 
 iso: $(TARGET)
 	mkdir -p isodir/boot/grub
-	cp $(TARGET) isodir/boot/kryonos.elf
-	echo 'set timeout=3' > isodir/boot/grub/grub.cfg
-	echo 'set default=0' >> isodir/boot/grub/grub.cfg
-	echo 'set gfxpayload=1920x1080x32' >> isodir/boot/grub/grub.cfg
-	echo 'menuentry "KryonOS" {' >> isodir/boot/grub/grub.cfg
-	echo '    multiboot /boot/kryonos.elf' >> isodir/boot/grub/grub.cfg
-	echo '    boot' >> isodir/boot/grub/grub.cfg
-	echo '}' >> isodir/boot/grub/grub.cfg
-	echo 'menuentry "KryonOS (Debug Screen)" {' >> isodir/boot/grub/grub.cfg
-	echo '    multiboot /boot/kryonos.elf debug=yes' >> isodir/boot/grub/grub.cfg
+	cp $(TARGET) isodir/boot/kryonos.bin
+	echo 'set timeout=0' > isodir/boot/grub/grub.cfg
+	echo 'insmod all_video' >> isodir/boot/grub/grub.cfg
+	echo 'menuentry "KryonOS UEFI/BIOS" {' >> isodir/boot/grub/grub.cfg
+	echo '    multiboot /boot/kryonos.bin' >> isodir/boot/grub/grub.cfg
 	echo '    boot' >> isodir/boot/grub/grub.cfg
 	echo '}' >> isodir/boot/grub/grub.cfg
 	grub-mkrescue -o kryonos.iso isodir
@@ -105,13 +105,21 @@ $(DISK_FAT32):
 	@mkdir -p $(dir $@)
 	dd if=/dev/zero of=$@ bs=1M count=16
 
+# QEMU'yu UEFI modunda çalıştırmak için -bios ekledik
 run: iso $(DISK_KRYFS) $(DISK_FAT32)
-	qemu-system-i386 -cdrom kryonos.iso \
-	   -drive format=raw,file=$(DISK_KRYFS),index=0,media=disk \
-	   -drive format=raw,file=$(DISK_FAT32),index=1,media=disk \
-	   -audiodev pa,id=audio0 -device AC97,audiodev=audio0 \
-	   -machine pcspk-audiodev=audio0 \
-	   -device piix3-usb-uhci,id=uhci \
-	   -device usb-mouse,bus=uhci.0 \
-	   -serial stdio -vga std -display sdl,gl=on \
-       -no-shutdown -no-reboot
+	qemu-system-x86_64 \
+       -bios /usr/share/edk2/x64/OVMF.4m.fd \
+       -cdrom kryonos.iso \
+       -m 2G \
+       -drive format=raw,file=$(DISK_KRYFS),index=0,media=disk \
+       -drive format=raw,file=$(DISK_FAT32),index=1,media=disk \
+       -audiodev pa,id=audio0 -device AC97,audiodev=audio0 \
+       -machine pcspk-audiodev=audio0 \
+       -device ich9-usb-ehci1,id=ehci,addr=1d.7,multifunction=on \
+       -device ich9-usb-uhci1,id=uhci.0,addr=1d.0,multifunction=on,masterbus=ehci.0,firstport=0 \
+       -device ich9-usb-uhci2,id=uhci.1,addr=1d.1,multifunction=on,masterbus=ehci.0,firstport=2 \
+       -device ich9-usb-uhci3,id=uhci.2,addr=1d.2,multifunction=on,masterbus=ehci.0,firstport=4 \
+       -device usb-tablet,bus=ehci.0,port=1 \
+       -netdev user,id=net0 -device e1000,netdev=net0 \
+       -rtc base=localtime \
+       -serial stdio -vga std -display gtk,gl=on
