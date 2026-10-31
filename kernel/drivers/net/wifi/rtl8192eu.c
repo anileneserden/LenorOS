@@ -3,8 +3,9 @@
 #include <kernel/serial.h>
 #include <kernel/string.h>
 
-#define REALTEK_VENDOR_ID    0x0BDA
-#define RTL8192EU_PRODUCT_ID 0x8179
+#define REALTEK_VENDOR_ID     0x0BDA
+#define RTL8192EU_PRODUCT_ID1 0x8179
+#define RTL8192EU_PRODUCT_ID2 0x818B
 
 typedef struct {
     uint16_t vendor_id;
@@ -19,20 +20,32 @@ static rtl8192eu_dev_t g_wifi_device;
 static usb_driver_t rtl8192eu_driver_node;
 
 int rtl8192eu_probe(uint16_t vid, uint16_t pid) {
-    if (vid != REALTEK_VENDOR_ID || pid != RTL8192EU_PRODUCT_ID) {
+    if (vid != REALTEK_VENDOR_ID || (pid != RTL8192EU_PRODUCT_ID1 && pid != RTL8192EU_PRODUCT_ID2)) {
         return -1;
     }
 
-    serial_write("[RTL8192EU] Realtek Wi-Fi adaptoru algilandi (VID: 0x0BDA, PID: 0x8179)\n");
+    serial_write("[RTL8192EU] Realtek Wi-Fi adaptoru algilandi ve eslesti!\n");
 
     g_wifi_device.vendor_id = vid;
     g_wifi_device.product_id = pid;
     g_wifi_device.connected = true;
 
-    // TODO: 
-    // 1. Control Transfer ile cihazı resetleme ve EEPROM'dan MAC adresini okuma
-    // 2. Firmware yükleme adımları
-    // 3. Bulk IN / OUT endpoint adreslerinin yapılandırılması
+    // Şimdilik cihazın ayakta olduğunu doğrulamak için boş bir control transfer test paketi
+    usb_setup_packet_t setup = {
+        .bmRequestType = 0x80, // Standard Device Request, Device-to-Host
+        .bRequest = 0x06,      // GET_DESCRIPTOR
+        .wValue = 0x0100,      // Device Descriptor
+        .wIndex = 0x0000,
+        .wLength = 18          // Device descriptor uzunluğu
+    };
+
+    uint8_t desc_buf[18];
+    int res = ehci_control_transfer(&setup, desc_buf, 18);
+    if (res < 0) {
+        serial_write("[RTL8192EU] Bilgi: Cihaz descriptor okumasi sonraki aşamaya bırakıldı.\n");
+    } else {
+        serial_write("[RTL8192EU] Cihaz descriptor basariyla okundu!\n");
+    }
 
     return 0;
 }
@@ -46,9 +59,9 @@ int rtl8192eu_init(void) {
     serial_write("[RTL8192EU] Wi-Fi surucusu baslatiliyor...\n");
     memset(&g_wifi_device, 0, sizeof(rtl8192eu_dev_t));
     
-    // Sürücüyü USB Core'a kaydediyoruz
+    // Sürücüyü USB Core'a kaydediyoruz (Ana desteklenen PID'yi düğüme bağlıyoruz)
     rtl8192eu_driver_node.vendor_id = REALTEK_VENDOR_ID;
-    rtl8192eu_driver_node.product_id = RTL8192EU_PRODUCT_ID;
+    rtl8192eu_driver_node.product_id = RTL8192EU_PRODUCT_ID1;
     rtl8192eu_driver_node.probe = rtl8192eu_probe;
     rtl8192eu_driver_node.disconnect = rtl8192eu_disconnect;
 

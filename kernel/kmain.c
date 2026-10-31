@@ -58,7 +58,7 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     pmm_init(mboot);
     vmm_init();
     heap_init(0x2000000, 1024 * 1024 * 16);
-    usb_notify_device_connect(0x0BDA, 0x8179);
+    // DİKKAT: usb_notify_device_connect buradayken henüz sürücü kayıtlı değildi!
 
     // Framebuffer başlatılıyor
     fb_init(mboot);
@@ -77,6 +77,9 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
 
     usb_init();
     rtl8192eu_init();
+
+    // Sürücüler kayıt olduktan SONRA cihaz bağlantısını simüle ediyoruz / tetikliyoruz:
+    usb_notify_device_connect(0x0BDA, 0x818B);
 
     // 3. Filesystems and VFS Initialization
     vfs_init();

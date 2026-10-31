@@ -30,11 +30,15 @@ void usb_register_driver(usb_driver_t* driver) {
 void usb_notify_device_connect(uint16_t vid, uint16_t pid) {
     serial_write("[USB Core] Device attached. Checking drivers...\n");
     for (int i = 0; i < driver_count; i++) {
-        if (registered_drivers[i]->vendor_id == vid && registered_drivers[i]->product_id == pid) {
+        // Vendor ID eşleşiyorsa (Wi-Fi sürücümüz için PID çoklu olabilir, probe içinde detaylı filtreleniyor)
+        if (registered_drivers[i]->vendor_id == vid) {
             if (registered_drivers[i]->probe) {
-                registered_drivers[i]->probe(vid, pid);
+                // Sürücünün probe fonksiyonuna VID ve PID'yi iletiyoruz
+                if (registered_drivers[i]->probe(vid, pid) == 0) {
+                    serial_write("[USB Core] Driver successfully bound to device!\n");
+                    return;
+                }
             }
-            return;
         }
     }
     serial_write("[USB Core] No matching driver found for the device.\n");

@@ -12,6 +12,15 @@ typedef struct {
     void (*disconnect)(void);
 } usb_driver_t;
 
+// USB Standart Setup Paketi (8 bayt)
+typedef struct {
+    uint8_t bmRequestType;
+    uint8_t bRequest;
+    uint16_t wValue;
+    uint16_t wIndex;
+    uint16_t wLength;
+} __attribute__((packed)) usb_setup_packet_t;
+
 // USB alt sistemini başlatır
 int usb_init(void);
 
