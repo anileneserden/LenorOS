@@ -1,15 +1,44 @@
 #include <kernel/drivers/input/keyboard_usb.h>
-#include <kernel/drivers/input/keyboard_ps2.h>
 #include <kernel/serial.h>
 #include <stdbool.h>
 
 #ifndef KEYBOARD_USB_LOG
-#define KEYBOARD_USB_LOG 0
+#define KEYBOARD_USB_LOG 1
 #endif
 
 #define HID_USAGE_MAX 0x66
 
-// HID usage ID to PS/2 Set-1 scancode. Extended keys use their base code, as the PS/2 path does.
+// Ortak klavye durum ve scancode değişkenleri
+static uint8_t last_scancode = 0;
+static bool key_states[128] = {0};
+
+uint8_t keyboard_get_last_scancode(void) {
+    return last_scancode;
+}
+
+void keyboard_clear_last_scancode(void) {
+    last_scancode = 0;
+}
+
+bool keyboard_is_key_pressed(int key_code) {
+    if (key_code < 0 || key_code >= 128) return false;
+    return key_states[key_code];
+}
+
+void keyboard_process_scancode(uint8_t scancode, bool is_released) {
+    if (scancode < 128) {
+        key_states[scancode] = !is_released;
+        if (!is_released) {
+            last_scancode = scancode;
+        } else {
+            // Parmağımızı çektiğimiz tuş, son basılan tuşsa sıfırla (Kamerayı durdurur)
+            if (last_scancode == scancode) {
+                last_scancode = 0;
+            }
+        }
+    }
+}
+
 static const uint8_t usage_to_scancode[HID_USAGE_MAX] = {
     [0x04] = 0x1E, [0x05] = 0x30, [0x06] = 0x2E, [0x07] = 0x20, [0x08] = 0x12, [0x09] = 0x21,
     [0x0A] = 0x22, [0x0B] = 0x23, [0x0C] = 0x17, [0x0D] = 0x24, [0x0E] = 0x25, [0x0F] = 0x26,
@@ -30,11 +59,10 @@ static const uint8_t usage_to_scancode[HID_USAGE_MAX] = {
     [0x53] = 0x45,
 };
 
-// Bit order of the HID modifier byte: LCtrl, LShift, LAlt, LGui, RCtrl, RShift, RAlt, RGui.
 static const uint8_t modifier_to_scancode[8] = { 0x1D, 0x2A, 0x38, 0x5B, 0x1D, 0x36, 0x38, 0x5C };
 
-static uint8_t previous_keys[6];
-static uint8_t previous_modifiers;
+static uint8_t previous_keys[6] = {0};
+static uint8_t previous_modifiers = 0;
 
 static bool contains(const uint8_t *keys, uint8_t usage) {
     for (int i = 0; i < 6; i++) {
@@ -45,41 +73,80 @@ static bool contains(const uint8_t *keys, uint8_t usage) {
 
 static void emit(uint8_t usage, uint8_t scancode, bool released) {
     if (KEYBOARD_USB_LOG) {
-        serial_write(released ? "[USB-KBD] release usage=0x" : "[USB-KBD] press usage=0x");
-        serial_write_hex8(usage);
-        serial_write(" scancode=0x");
-        serial_write_hex8(scancode);
-        serial_write("\n");
+        if (released) {
+            serial_write("[USB-KBD] Release -> Usage: 0x");
+            serial_write_hex8(usage);
+            serial_write(" | Scancode: 0x");
+            serial_write_hex8(scancode);
+            serial_write("\n");
+        } else {
+            serial_write("[USB-KBD] Press -> Usage: 0x");
+            serial_write_hex8(usage);
+            serial_write(" | Scancode: 0x");
+            serial_write_hex8(scancode);
+            serial_write("\n");
+        }
     }
     keyboard_process_scancode(scancode, released);
 }
 
 void keyboard_usb_process_report(const uint8_t *report) {
     const uint8_t *keys = &report[2];
+    uint8_t modifiers = report[0];
 
-    // Every slot reads 0x01 when more keys are held than the keyboard can report.
+    // Eğer rapordaki tüm tuşlar ve modifier'lar 0 ise -> Tüm tuşlar bırakıldı!
+    if (modifiers == 0 && keys[0] == 0 && keys[1] == 0 && keys[2] == 0 && 
+        keys[3] == 0 && keys[4] == 0 && keys[5] == 0) {
+        
+        for (int i = 0; i < 6; i++) {
+            uint8_t usage = previous_keys[i];
+            if (usage != 0 && usage < HID_USAGE_MAX && usage_to_scancode[usage]) {
+                emit(usage, usage_to_scancode[usage], true);
+            }
+            previous_keys[i] = 0;
+        }
+        
+        for (int bit = 0; bit < 8; bit++) {
+            if ((previous_modifiers & (1U << bit)) != 0) {
+                emit(0xE0 + bit, modifier_to_scancode[bit], true);
+            }
+        }
+        previous_modifiers = 0;
+        return;
+    }
+
     if (keys[0] == 0x01) return;
 
-    uint8_t modifiers = report[0];
     for (int bit = 0; bit < 8; bit++) {
         uint8_t mask = 1U << bit;
-        if ((modifiers ^ previous_modifiers) & mask) {
-            emit(0xE0 + bit, modifier_to_scancode[bit], !(modifiers & mask));
+        bool prev_state = (previous_modifiers & mask) != 0;
+        bool curr_state = (modifiers & mask) != 0;
+
+        if (prev_state != curr_state) {
+            emit(0xE0 + bit, modifier_to_scancode[bit], !curr_state);
         }
     }
 
     for (int i = 0; i < 6; i++) {
         uint8_t usage = previous_keys[i];
-        if (usage >= HID_USAGE_MAX || !usage_to_scancode[usage] || contains(keys, usage)) continue;
-        emit(usage, usage_to_scancode[usage], true);
+        if (usage == 0 || usage >= HID_USAGE_MAX || !usage_to_scancode[usage]) continue;
+
+        if (!contains(keys, usage)) {
+            emit(usage, usage_to_scancode[usage], true);
+        }
     }
 
     for (int i = 0; i < 6; i++) {
         uint8_t usage = keys[i];
-        if (usage >= HID_USAGE_MAX || !usage_to_scancode[usage] || contains(previous_keys, usage)) continue;
-        emit(usage, usage_to_scancode[usage], false);
+        if (usage == 0 || usage >= HID_USAGE_MAX || !usage_to_scancode[usage]) continue;
+
+        if (!contains(previous_keys, usage)) {
+            emit(usage, usage_to_scancode[usage], false);
+        }
     }
 
-    for (int i = 0; i < 6; i++) previous_keys[i] = keys[i];
+    for (int i = 0; i < 6; i++) {
+        previous_keys[i] = keys[i];
+    }
     previous_modifiers = modifiers;
 }

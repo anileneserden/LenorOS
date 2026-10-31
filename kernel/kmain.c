@@ -29,7 +29,6 @@
 #include <kernel/hexdump.h>
 #include <kernel/loader/lex2.h>
 #include <ui/renderer3d.h>
-#include <ui/camera.h>
 
 // Ekran / Çalışma Modları Tanımlamaları
 #define MODE_DESKTOP      0
