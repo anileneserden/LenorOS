@@ -13,9 +13,7 @@
 #include <kernel/drivers/audio/ac97.h>
 #include <kernel/drivers/audio/pcspeaker.h>
 #include <kernel/drivers/pci.h>
-#include <kernel/drivers/usb/ehci.h>
-#include <kernel/drivers/usb/uhci.h>
-#include <kernel/drivers/usb/xhci.h>
+#include <kernel/drivers/usb/core.h>
 #include <ui/cursor.h>
 #include <ui/desktop.h>
 #include <ui/serial_screen.h>
@@ -75,19 +73,7 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
 
     e1000_init();
 
-    // Donanımda hangi USB kontrolcüsü varsa, EHCI'yi test etmek için önceliği ona veriyoruz
-    if (ehci_detect_controller()) {
-        serial_write("[USB] EHCI controller detected. Starting EHCI driver...\n");
-        ehci_init();
-    } else if (xhci_detect_controller()) {
-        serial_write("[USB] xHCI controller detected. Starting xHCI driver...\n");
-        xhci_init();
-    } else if (uhci_detect_controller()) {
-        serial_write("[USB] UHCI controller detected. Starting UHCI driver...\n");
-        uhci_init();
-    } else {
-        serial_write("[USB] WARNING: No supported USB controller found on PCI bus!\n");
-    }
+    usb_init();
 
     // 3. Filesystems and VFS Initialization
     vfs_init();
@@ -114,7 +100,7 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
         serial_write("LNRFS: Driver could not be started!\n");
     }
 
-    serial_write("[input] xHCI USB input active.\n");
+    serial_write("[input] USB input active via Core.\n");
 
     // 5. Graphical Interface Initialization and Initial Drawing
     uint32_t width = fb_get_width();
@@ -124,7 +110,6 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
         if (debug_mode) {
             serial_screen_write("Debug screen fully loaded.\n");
             while (1) {
-                // PS/2 port polling kaldırıldı
             }
         } else {
             fb_clear(0xFF0000FF);
@@ -135,7 +120,6 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     app_manager_init();
     fb_swap();
 
-    // C sürücüsündeki Program Files altına attığın lex2 paketini çalıştır
     if (lex2_load_and_run("C:/Program Files/test2/test2.lex")) {
         serial_write("Test2 uygulamasi basariyla calistirildi!\n");
     } else {
@@ -149,16 +133,14 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     }
 
     interrupts_init();
-    serial_write("System initialized; idle loop polls USB EHCI events.\n");
+    serial_write("System initialized; idle loop polls USB events via Core.\n");
 
-    // 7. Main event loop (GUI active loop with USB polling)
+    // 7. Main event loop (GUI active loop with centralized USB polling)
     while (1) {
         uint8_t input_updated = 0;
 
-        // EHCI poll mekanizmasını çağırıyoruz
-        input_updated = ehci_poll();
+        input_updated = usb_poll();
 
-        // Masaüstü ve uygulama güncellemelerini tetikle
         desktop_process_input();
         app_manager_update_all();
 

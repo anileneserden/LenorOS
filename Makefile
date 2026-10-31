@@ -35,6 +35,7 @@ SRC_C = \
     kernel/drivers/input/mouse_usb.c \
     kernel/drivers/net/e1000.c \
     kernel/drivers/storage/ata.c \
+    kernel/drivers/usb/core.c \
     kernel/drivers/usb/ehci.c \
     kernel/drivers/usb/uhci.c \
     kernel/drivers/usb/xhci.c \
