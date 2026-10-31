@@ -34,6 +34,7 @@ SRC_C = \
     kernel/drivers/input/mouse_ps2.c \
     kernel/drivers/input/mouse_usb.c \
     kernel/drivers/net/e1000.c \
+    kernel/drivers/net/wifi/rtl8192eu.c \
     kernel/drivers/storage/ata.c \
     kernel/drivers/usb/core.c \
     kernel/drivers/usb/ehci.c \
@@ -110,19 +111,20 @@ $(DISK_FAT32):
 # QEMU'yu UEFI modunda çalıştırmak için -bios ekledik
 run: iso $(DISK_LNRFS) $(DISK_FAT32)
 	qemu-system-x86_64 \
-       -bios /usr/share/edk2/x64/OVMF.4m.fd \
-       -cdrom lenoros.iso \
-       -m 2G \
-       -drive format=raw,file=$(DISK_LNRFS),index=0,media=disk \
-       -drive format=raw,file=$(DISK_FAT32),index=1,media=disk \
-       -audiodev pa,id=audio0 -device AC97,audiodev=audio0 \
-       -machine pcspk-audiodev=audio0 \
-       -device ich9-usb-ehci1,id=ehci,addr=1d.7,multifunction=on \
-       -device ich9-usb-uhci1,id=uhci.0,addr=1d.0,multifunction=on,masterbus=ehci.0,firstport=0 \
-       -device ich9-usb-uhci2,id=uhci.1,addr=1d.1,multifunction=on,masterbus=ehci.0,firstport=2 \
-       -device ich9-usb-uhci3,id=uhci.2,addr=1d.2,multifunction=on,masterbus=ehci.0,firstport=4 \
-       -device usb-tablet,bus=ehci.0,port=1 \
-       -device usb-kbd,bus=ehci.0,port=2 \
-       -netdev user,id=net0 -device e1000,netdev=net0 \
-       -rtc base=localtime \
-       -serial stdio -vga std -display gtk,gl=on
+	   -bios /usr/share/edk2/x64/OVMF.4m.fd \
+	   -cdrom lenoros.iso \
+	   -m 2G \
+	   -drive format=raw,file=/home/anil/LenorOS/main/disk-lnrfs.img,index=0,media=disk \
+	   -drive format=raw,file=/home/anil/LenorOS/main/disk-fat32.img,index=1,media=disk \
+	   -audiodev pa,id=audio0 -device AC97,audiodev=audio0 \
+	   -machine pcspk-audiodev=audio0 \
+	   -device ich9-usb-ehci1,id=ehci,addr=1d.7,multifunction=on \
+	   -device ich9-usb-uhci1,id=uhci.0,addr=1d.0,multifunction=on,masterbus=ehci.0,firstport=0 \
+	   -device ich9-usb-uhci2,id=uhci.1,addr=1d.1,multifunction=on,masterbus=ehci.0,firstport=2 \
+	   -device ich9-usb-uhci3,id=uhci.2,addr=1d.2,multifunction=on,masterbus=ehci.0,firstport=4 \
+	   -device usb-tablet,bus=ehci.0,port=1 \
+	   -device usb-kbd,bus=ehci.0,port=2 \
+	   -device usb-host,vendorid=0x0bda,productid=0x8179 \
+	   -netdev user,id=net0 -device e1000,netdev=net0 \
+	   -rtc base=localtime \
+	   -serial stdio -vga std -display gtk,gl=on

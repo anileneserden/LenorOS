@@ -13,6 +13,7 @@
 #include <kernel/drivers/audio/ac97.h>
 #include <kernel/drivers/audio/pcspeaker.h>
 #include <kernel/drivers/pci.h>
+#include <kernel/drivers/net/wifi/rtl8192eu.h>
 #include <kernel/drivers/usb/core.h>
 #include <ui/cursor.h>
 #include <ui/desktop.h>
@@ -57,6 +58,7 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     pmm_init(mboot);
     vmm_init();
     heap_init(0x2000000, 1024 * 1024 * 16);
+    usb_notify_device_connect(0x0BDA, 0x8179);
 
     // Framebuffer başlatılıyor
     fb_init(mboot);
@@ -74,6 +76,7 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     e1000_init();
 
     usb_init();
+    rtl8192eu_init();
 
     // 3. Filesystems and VFS Initialization
     vfs_init();

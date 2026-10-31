@@ -4,7 +4,6 @@
 #include <kernel/drivers/usb/xhci.h>
 #include <kernel/serial.h>
 
-// Aktif olan USB kontrolcüsünü takip etmek için enum
 typedef enum {
     USB_CONTROLLER_NONE = 0,
     USB_CONTROLLER_EHCI,
@@ -14,8 +13,34 @@ typedef enum {
 
 static usb_controller_type_t active_controller = USB_CONTROLLER_NONE;
 
+// Maksimum kayıt edilebilir sürücü sayısı
+#define MAX_USB_DRIVERS 8
+static usb_driver_t* registered_drivers[MAX_USB_DRIVERS];
+static int driver_count = 0;
+
+void usb_register_driver(usb_driver_t* driver) {
+    if (driver_count < MAX_USB_DRIVERS) {
+        registered_drivers[driver_count++] = driver;
+        serial_write("[USB Core] Driver registered successfully.\n");
+    } else {
+        serial_write("[USB Core] ERROR: Driver registration limit reached!\n");
+    }
+}
+
+void usb_notify_device_connect(uint16_t vid, uint16_t pid) {
+    serial_write("[USB Core] Device attached. Checking drivers...\n");
+    for (int i = 0; i < driver_count; i++) {
+        if (registered_drivers[i]->vendor_id == vid && registered_drivers[i]->product_id == pid) {
+            if (registered_drivers[i]->probe) {
+                registered_drivers[i]->probe(vid, pid);
+            }
+            return;
+        }
+    }
+    serial_write("[USB Core] No matching driver found for the device.\n");
+}
+
 int usb_init(void) {
-    // Öncelik sırasına göre kontrolcüleri tarıyoruz (Senin kmain.c mantığının birebir aynısı)
     if (ehci_detect_controller()) {
         serial_write("[USB] EHCI controller detected. Starting EHCI driver...\n");
         ehci_init();
@@ -39,7 +64,6 @@ int usb_init(void) {
 }
 
 uint8_t usb_poll(void) {
-    // Hangi kontrolcü aktifse onun poll fonksiyonunu çağırıyoruz
     switch (active_controller) {
         case USB_CONTROLLER_EHCI:
             return ehci_poll();
