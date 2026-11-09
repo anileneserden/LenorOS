@@ -107,6 +107,44 @@ void gfx_fill_rounded_rect(int x, int y, int width, int height, int radius, uint
     }
 }
 
+void gfx_fill_rounded_rect_advanced(int x, int y, int width, int height, 
+                                    int r_tl, int r_tr, int r_bl, int r_br, uint32_t color) {
+    for (int cy = 0; cy < height; cy++) {
+        for (int cx = 0; cx < width; cx++) {
+            int draw_pixel = 1;
+
+            // Top-left corner (Sol Üst)
+            if (cx < r_tl && cy < r_tl) {
+                int dx = r_tl - cx;
+                int dy = r_tl - cy;
+                if ((dx * dx + dy * dy) > (r_tl * r_tl)) draw_pixel = 0;
+            }
+            // Top-right corner (Sağ Üst)
+            else if (cx >= width - r_tr && cy < r_tr) {
+                int dx = cx - (width - r_tr - 1);
+                int dy = r_tr - cy;
+                if ((dx * dx + dy * dy) > (r_tr * r_tr)) draw_pixel = 0;
+            }
+            // Bottom-left corner (Sol Alt)
+            else if (cx < r_bl && cy >= height - r_bl) {
+                int dx = r_bl - cx;
+                int dy = cy - (height - r_bl - 1);
+                if ((dx * dx + dy * dy) > (r_bl * r_bl)) draw_pixel = 0;
+            }
+            // Bottom-right corner (Sağ Alt)
+            else if (cx >= width - r_br && cy >= height - r_br) {
+                int dx = cx - (width - r_br - 1);
+                int dy = cy - (height - r_br - 1);
+                if ((dx * dx + dy * dy) > (r_br * r_br)) draw_pixel = 0;
+            }
+
+            if (draw_pixel) {
+                gfx_draw_pixel(x + cx, y + cy, color);
+            }
+        }
+    }
+}
+
 void gfx_draw_text(int x, int y, uint32_t color, const char* s) {
     if (!s) return;
 

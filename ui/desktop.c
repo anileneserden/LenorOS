@@ -399,6 +399,9 @@ void desktop_init(void) {
     desktop_icons_init();
     wm_init();
 
+    // Test amaçlı 3 sekmeli tarayıcı penceresi oluştur
+    wm_create_window(500, 350, "Lenor Tarayıcı", 3);
+
     // 3. Ekranı ilk kez çizime hazırla ve tetikle
     damage_union_rect(0, 0, width, height);
     desktop_redraw();

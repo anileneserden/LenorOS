@@ -60,7 +60,7 @@ void wm_init(void) {
     }
 }
 
-window_t* wm_create_window(int width, int height, const char* title) {
+window_t* wm_create_window_without_tabs(int width, int height, const char* title) {
     if (window_count >= MAX_WINDOWS) return 0;
 
     window_t* win = &window_list[window_count];
@@ -70,6 +70,9 @@ window_t* wm_create_window(int width, int height, const char* title) {
     win->is_dragging = false;
     win->drag_offset_x = 0;
     win->drag_offset_y = 0;
+    win->has_tabs = false;
+    win->tab_count = 0;
+    win->active_tab_index = 0;
 
     // Calculate minimum width based on title length (including [X] button and padding)
     int title_len = 0;
@@ -126,6 +129,21 @@ window_t* wm_create_window(int width, int height, const char* title) {
     return win;
 }
 
+window_t* wm_create_window_with_tabs(int width, int height, const char* title, int initial_tab_count) {
+    window_t* win = wm_create_window_without_tabs(width, height, title);
+    if (!win) return 0;
+
+    win->has_tabs = true;
+    win->tab_count = initial_tab_count > MAX_TABS ? MAX_TABS : initial_tab_count;
+    win->active_tab_index = 0;
+
+    for (int i = 0; i < win->tab_count; i++) {
+        snprintf(win->tabs[i].title, sizeof(win->tabs[i].title), "Sekme %d", i + 1);
+    }
+
+    return win;
+}
+
 void wm_close_window(window_t* win) {
     if (!win) return;
 
@@ -153,6 +171,8 @@ void wm_draw_window(window_t* win) {
     bool title_hovered = hovered_window == win;
     bool close_hovered = title_hovered && hovered_close_button;
 
+    int header_height = win->has_tabs ? 48 : 24;
+
     // 1. Window body
     gfx_fill_rect(win->x, win->y, win->width, win->height, win->bg_color);
 
@@ -161,7 +181,7 @@ void wm_draw_window(window_t* win) {
         panel_t* p = &win->panels[i];
         
         int rel_x = p->x;
-        int rel_y = 24 + p->y;
+        int rel_y = header_height + p->y;
         int w = p->width;
         int h = p->height;
 
@@ -187,9 +207,31 @@ void wm_draw_window(window_t* win) {
         : (win->is_active ? 0xFF007ACC : 0xFF505050);
     gfx_fill_rect(win->x, win->y, win->width, 24, title_color);
 
-    // 4. Title text (clip or limit if title overflows)
-    if (win->width > 16) {
-        gfx_draw_text_utf8(win->x + 8, win->y + 6, 0xFFFFFFFF, win->title);
+    // 4. Sekmeler varsa başlık çubuğunun İÇİNE sekmeleri çiz, yoksa normal başlık metnini yaz
+    if (win->has_tabs) {
+        int tab_w = 90;
+        int max_visible_w = win->width - 30; // Sağdaki [X] kapatma butonu için pay bırakıyoruz
+
+        for (int i = 0; i < win->tab_count; i++) {
+            int tab_x = win->x + 4 + (i * (tab_w + 2));
+
+            // [X] butonunun üzerine taşmayı engelle
+            if (tab_x + tab_w > win->x + max_visible_w) break;
+
+            // Aktif sekme arka planı pencere rengiyle bütünleşsin, pasif olanlar biraz koyu kalsın
+            uint32_t tab_bg = (i == win->active_tab_index) ? win->bg_color : 0xFF2D2D2D;
+
+            // --- YENİ: Sadece üst köşeleri yuvarlatılmış sekme kutucuğu (radius_tl = 4, radius_tr = 4, altlar = 0) ---
+            gfx_fill_rounded_rect_advanced(tab_x, win->y + 2, tab_w, 22, 4, 4, 0, 0, tab_bg);
+
+            // Sekme başlığı metni
+            gfx_draw_text_utf8(tab_x + 8, win->y + 6, 0xFFFFFFFF, win->tabs[i].title);
+        }
+    } else {
+        // Normal pencere başlığı metni
+        if (win->width > 16) {
+            gfx_draw_text_utf8(win->x + 8, win->y + 6, 0xFFFFFFFF, win->title);
+        }
     }
 
     // 5. Close [X] button (top-right corner)
@@ -787,8 +829,26 @@ void wm_process_input(void) {
                 active_input = 0; 
             }
 
+            // --- SEKME TIKLAMA KONTROLÜ ---
+            bool clicked_on_tab = false;
+            if (target->has_tabs) {
+                int tab_bar_y = target->y + 24;
+                if (mouse_y >= tab_bar_y && mouse_y < tab_bar_y + 24) {
+                    int rel_x = mouse_x - (target->x + 4);
+                    int tab_w = 92;
+                    int clicked_idx = rel_x / tab_w;
+
+                    if (clicked_idx >= 0 && clicked_idx < target->tab_count) {
+                        target->active_tab_index = clicked_idx;
+                        clicked_on_tab = true;
+                        damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+                        desktop_redraw();
+                    }
+                }
+            }
+
             // Resize check
-            int dir = get_resize_direction(target, mouse_x, mouse_y);
+            int dir = !clicked_on_tab ? get_resize_direction(target, mouse_x, mouse_y) : RESIZE_NONE;
             if (dir != RESIZE_NONE) {
                 resized_window = target;
                 resize_direction = dir;
@@ -799,10 +859,32 @@ void wm_process_input(void) {
                 resize_old_h = target->height;
             } else if (!clicked_on_button && !clicked_on_input && !clicked_on_combobox) {
                 if (mouse_y >= target->y && mouse_y < target->y + WM_TITLEBAR_HEIGHT) {
-                    dragged_window = front_win;
-                    dragged_window->is_dragging = true;
-                    dragged_window->drag_offset_x = mouse_x - target->x;
-                    dragged_window->drag_offset_y = mouse_y - target->y;
+                    bool clicked_on_tab = false;
+
+                    // Eğer pencerede sekmeler varsa başlık çubuğu tıklamasını kontrol et
+                    if (target->has_tabs) {
+                        int rel_x = mouse_x - (target->x + 4);
+                        int tab_w = 92; // Genişlik + boşluk
+                        int clicked_idx = rel_x / tab_w;
+
+                        // Tıklanan yer bir sekmenin sınırları içerisindeyse
+                        if (clicked_idx >= 0 && clicked_idx < target->tab_count) {
+                            target->active_tab_index = clicked_idx;
+                            clicked_on_tab = true;
+
+                            // İŞTE BURAYA EKLİYORUZ: Sekme değiştiğinde pencerenin alanını yenilenmeye zorla
+                            damage_union_rect(target->x, target->y, target->width, target->height);
+                            desktop_redraw();
+                        }
+                    }
+
+                    // Bir sekmenin üzerine basılmadıysa (boş başlık çubuğu alanına basıldıysa) pencereyi sürükle
+                    if (!clicked_on_tab) {
+                        dragged_window = front_win;
+                        dragged_window->is_dragging = true;
+                        dragged_window->drag_offset_x = mouse_x - target->x;
+                        dragged_window->drag_offset_y = mouse_y - target->y;
+                    }
                 }
             }
 

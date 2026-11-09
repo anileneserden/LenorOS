@@ -11,6 +11,7 @@
 #define MAX_INPUTS   8
 #define MAX_COMBOBOXES 8
 #define MAX_PICTUREBOXES 8
+#define MAX_TABS     5
 
 typedef struct {
     int x, y;
@@ -93,6 +94,11 @@ typedef struct {
 } picturebox_t;
 
 typedef struct {
+    char title[32];
+    char url[256];
+} browser_tab_t;
+
+typedef struct {
     int x, y;
     int width, height;
     
@@ -128,6 +134,12 @@ typedef struct {
     picturebox_t pictureboxes[MAX_PICTUREBOXES];
     int picturebox_count;
 
+    // --- SEKME (TAB) YÖNETİMİ ---
+    bool has_tabs;
+    int active_tab_index;
+    browser_tab_t tabs[MAX_TABS];
+    int tab_count;
+
     bool has_canvas;
     int canvas_x, canvas_y;
     int canvas_w, canvas_h;
@@ -136,7 +148,14 @@ typedef struct {
 } window_t;
 
 void wm_init(void);
-window_t* wm_create_window(int width, int height, const char* title);
+
+window_t* wm_create_window_without_tabs(int width, int height, const char* title);
+window_t* wm_create_window_with_tabs(int width, int height, const char* title, int initial_tab_count);
+
+#define CHOOSE_WM_CREATE_WINDOW(_1, _2, _3, _4, NAME, ...) NAME
+#define wm_create_window(...) \
+    CHOOSE_WM_CREATE_WINDOW(__VA_ARGS__, wm_create_window_with_tabs, wm_create_window_without_tabs, 0)(__VA_ARGS__)
+
 window_t* wm_get_active_window(void);
 void wm_draw_window(window_t* win);
 void wm_draw_all(void);

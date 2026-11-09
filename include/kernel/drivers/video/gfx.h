@@ -10,6 +10,8 @@ void gfx_fill_rect(int x, int y, int width, int height, uint32_t color);
 void gfx_fill_rect_alpha(int x, int y, int w, int h, uint32_t color, uint8_t alpha);
 void gfx_draw_rect(int x, int y, int width, int height, uint32_t color);
 void gfx_fill_rounded_rect(int x, int y, int width, int height, int radius, uint32_t color);
+void gfx_fill_rounded_rect_advanced(int x, int y, int width, int height, 
+                                    int r_tl, int r_tr, int r_bl, int r_br, uint32_t color);
 
 void gfx_draw_text(int x, int y, uint32_t color, const char* s);
 void gfx_draw_text_utf8(int x, int y, uint32_t color, const char* s);
