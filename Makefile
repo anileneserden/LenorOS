@@ -60,6 +60,7 @@ SRC_C = \
     ui/desktop_icons.c \
     ui/desktop.c \
     ui/grid.c \
+    ui/menu.c \
     ui/serial_screen.c \
     ui/window.c \
     ui/wm.c

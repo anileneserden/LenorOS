@@ -8,6 +8,7 @@
 #include <ui/wm.h>
 #include <ui/cursor.h>
 #include <ui/grid.h>
+#include <ui/menu.h>
 #include <kernel/fs/vfs.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
@@ -106,6 +107,32 @@ void damage_union_rect(int x, int y, int w, int h) {
         screen_damage.y = min_y;
         screen_damage.w = max_x - min_x;
         screen_damage.h = max_y - min_y;
+    }
+}
+
+static void menu_action_refresh(void* context) {
+    desktop_icons_refresh();
+    damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+}
+
+static void menu_action_new_file(void* context) {
+    char target_path[256];
+    const char *desktop_dir = "C:/Users/anil/Desktop";
+    get_unique_filename(desktop_dir, "Metin Belgesi", ".txt", target_path, sizeof(target_path));
+    
+    if (vfs_create_file(target_path) == 0) {
+        desktop_icons_refresh();
+        damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+    }
+}
+
+static void menu_action_close_window(void* context) {
+    window_t* win = (window_t*)context;
+    if (win) {
+        cursor_prepare_redraw();
+        wm_close_window(win);
+        cursor_sync_position();
+        cursor_show();
     }
 }
 
@@ -282,52 +309,8 @@ void desktop_redraw(void) {
         gfx_fill_rect(menu_x, menu_y + menu_h - 1, menu_w, 1, 0xFF111111); // Bottom
     }
 
-    // 6.5. --- RIGHT-CLICK MENU (Drawn if open and Hover Check is Performed) ---
-    if (right_menu_open) {
-        int r_w = RIGHT_MENU_W;
-        int r_h = RIGHT_MENU_H;
-        int r_x = right_menu_x;
-        int r_y = right_menu_y;
-
-        // Prevent overflowing screen boundaries
-        if (r_x + r_w > screen_w) r_x = screen_w - r_w;
-        if (r_y + r_h > screen_h) r_y = screen_h - r_h;
-
-        // Menu background
-        gfx_fill_rect(r_x, r_y, r_w, r_h, 0xFF222222);
-
-        int cur_x = cursor_get_x();
-        int cur_y = cursor_get_y();
-
-        // Option 1: Refresh
-        bool hover_yenile = (cur_x >= r_x + 4 && cur_x <= r_x + r_w - 4 &&
-                             cur_y >= r_y + 6 && cur_y <= r_y + 30);
-        uint32_t bg_yenile = hover_yenile ? 0xFF3A3A3A : 0xFF2A2A2A; // Lighter color if hovered
-        
-        gfx_fill_rect(r_x + 4, r_y + 6, r_w - 8, 24, bg_yenile);
-        gfx_draw_text(r_x + 12, r_y + 10, 0xFFFFFFFF, "Refresh");
-
-        // Option 2: Terminal
-        bool hover_terminal = (cur_x >= r_x + 4 && cur_x <= r_x + r_w - 4 &&
-                               cur_y >= r_y + 34 && cur_y <= r_y + 58);
-        uint32_t bg_terminal = hover_terminal ? 0xFF3A3A3A : 0xFF2A2A2A; // Lighter color if hovered
-
-        gfx_fill_rect(r_x + 4, r_y + 34, r_w - 8, 24, bg_terminal);
-        gfx_draw_text(r_x + 12, r_y + 38, 0xFFFFFFFF, "Terminal");
-
-        // Option 3: New File
-        bool hover_newfile = (cur_x >= r_x + 4 && cur_x <= r_x + r_w - 4 &&
-                              cur_y >= r_y + 62 && cur_y <= r_y + 86);
-        uint32_t bg_newfile = hover_newfile ? 0xFF3A3A3A : 0xFF2A2A2A;
-        gfx_fill_rect(r_x + 4, r_y + 62, r_w - 8, 24, bg_newfile);
-        gfx_draw_text(r_x + 12, r_y + 66, 0xFFFFFFFF, "New File");
-
-        // Menu Outer Border (Classic 3D look)
-        gfx_fill_rect(r_x, r_y, r_w, 1, 0xFF666666); // Top
-        gfx_fill_rect(r_x, r_y, 1, r_h, 0xFF666666); // Left
-        gfx_fill_rect(r_x + r_w - 1, r_y, 1, r_h, 0xFF111111); // Right
-        gfx_fill_rect(r_x, r_y + r_h - 1, r_w, 1, 0xFF111111); // Bottom
-    }
+    // 6.5. --- DİNAMİK MENU ÇİZİMİ ---
+    menu_draw();
 
     // 7. Draw the cursor at its new back-buffer position (blit=false because we perform one combined blit)
     cursor_show_internal(false);
@@ -426,7 +409,6 @@ void desktop_process_input(void) {
     uint8_t scancode = keyboard_get_last_scancode();
     if (scancode == 0x5B) { // 0x5B: Super / Windows tuşu
         start_menu_open = !start_menu_open;
-        right_menu_open = false; // Çakışmayı önlemek için sağ tık menüsünü kapat
 
         int screen_w = fb_get_width();
         int screen_h = fb_get_height();
@@ -460,39 +442,9 @@ void desktop_process_input(void) {
         int btn_w = 70;
         int btn_h = 28;
 
-        // --- SAĞ TIK MENÜSÜ AÇIKKEN SOL TIKLANDIYSAYSA ---
-        if (right_menu_open) {
-            int r_w = RIGHT_MENU_W;
-            int r_h = RIGHT_MENU_H;
-            int r_x = right_menu_x;
-            int r_y = right_menu_y;
-
-            // Ekran sınırlarına taşmayı engelle (Redraw mantığıyla birebir aynı)
-            if (r_x + r_w > screen_w) r_x = screen_w - r_w;
-            if (r_y + r_h > screen_h) r_y = screen_h - r_h;
-
-            // "New File" butonuna basildiginda:
-            if (new_x >= r_x + 4 && new_x <= r_x + r_w - 4 &&
-                new_y >= r_y + 62 && new_y <= r_y + 86) {
-
-                char target_path[256];
-                const char *desktop_dir = "C:/Users/anil/Desktop";
-
-                get_unique_filename(desktop_dir, "Metin Belgesi", ".txt", target_path, sizeof(target_path));
-                
-                // 1. Dosyayı diske/VFS'e yaz
-                if (vfs_create_file(target_path) == 0) {
-                    desktop_icons_refresh();
-                    // 2. Bütün ekranı yenilenmeye zorla ki yeni dosya ikonu anında belirsin
-                    damage_union_rect(0, 0, screen_w, screen_h);
-                }
-            } else if (new_x >= r_x + 4 && new_x <= r_x + r_w - 4 &&
-                       new_y >= r_y + 6 && new_y <= r_y + 30) {
-                desktop_icons_refresh();
-            }
-
-            // Seçim yapılsın veya dışarı tıklansın, sağ tık menüsünü kapat ve ekranı yenile
-            right_menu_open = false;
+        // --- EĞER AÇIK DİNAMİK BİR MENÜ VARSA (Masaüstü veya Başlık Çubuğu Sağ Tık) ---
+        if (menu_is_open()) {
+            menu_handle_click(new_x, new_y);
             damage_union_rect(0, 0, screen_w, screen_h);
             desktop_redraw();
         }
@@ -541,14 +493,36 @@ void desktop_process_input(void) {
     // 4. --- RIGHT-CLICK CHECK ---
     bool current_mouse_right = (mouse_buttons & 0x02); // Bit 1 = Right Click
     if (current_mouse_right && !prev_mouse_right) {
-        // Open the menu if the desktop is right-clicked outside the taskbar area
-        if (new_y < taskbar_y) {
-            right_menu_open = true;
-            right_menu_x = new_x;
-            right_menu_y = new_y;
+        
+        // Farenin altında herhangi bir pencere var mı kontrol et
+        window_t* clicked_window = wm_find_at(new_x, new_y);
+
+        // A. PENCERE BAŞLIK ÇUĞUNA SAĞ TIKLANDIYSA
+        if (clicked_window && 
+            new_y >= clicked_window->y && new_y < clicked_window->y + 24 &&
+            new_x >= clicked_window->x && new_x <= clicked_window->x + clicked_window->width) {
             
-            // Close the start menu to avoid conflicts
             start_menu_open = false;
+
+            // Başlık çubuğu için dizi (array) tabanlı menü elemanları
+            menu_item_t titlebar_items[] = {
+                { "Kapat", menu_action_close_window }
+            };
+            menu_show(new_x, new_y, titlebar_items, 1, clicked_window);
+
+            damage_union_rect(0, 0, screen_w, screen_h);
+            desktop_redraw();
+        }
+        // B. BOŞ MASAÜSTÜNE SAĞ TIKLANDIYSA (Görev çubuğu üstü hariç)
+        else if (!clicked_window && new_y < taskbar_y) {
+            start_menu_open = false;
+
+            // Masaüstü için dizi (array) tabanlı menü elemanları
+            menu_item_t desktop_items[] = {
+                { "Refresh", menu_action_refresh },
+                { "New File", menu_action_new_file }
+            };
+            menu_show(new_x, new_y, desktop_items, 2, NULL);
 
             damage_union_rect(0, 0, screen_w, screen_h);
             desktop_redraw();
@@ -561,9 +535,9 @@ void desktop_process_input(void) {
         damage_union_rect(old_x, old_y, cursor_w, cursor_h); // Clear the old position
         damage_union_rect(new_x, new_y, cursor_w, cursor_h); // Draw the new position
         
-        // Ensure the menu also refreshes when the mouse moves while the right-click menu is open (for hover)
-        if (right_menu_open) {
-            damage_union_rect(right_menu_x, right_menu_y, RIGHT_MENU_W, RIGHT_MENU_H);
+        // Ensure the menu also refreshes when the mouse moves while the context menu is open
+        if (menu_is_open()) {
+            damage_union_rect(new_x, new_y, 140, 100);
         }
 
         // Sol üstteki genişletilmiş donanım panelinin alanını hasarlı bölgeye ekle
