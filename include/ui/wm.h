@@ -96,6 +96,8 @@ typedef struct {
 typedef struct {
     char title[32];
     char url[256];
+    int current_x;
+    int target_x;
 } browser_tab_t;
 
 typedef struct {

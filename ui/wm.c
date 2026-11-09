@@ -37,6 +37,9 @@ static window_t* resized_window = 0;
 static window_t* hovered_window = 0;
 static uint8_t hovered_close_button = 0;
 static int resize_direction = RESIZE_NONE;
+static int dragged_tab_index = -1;
+static int tab_drag_start_x = 0;
+static int tab_grab_offset_x = 0;
 static uint8_t prev_buttons = 0;
 static int resize_old_x = 0;
 static int resize_old_y = 0;
@@ -213,18 +216,28 @@ void wm_draw_window(window_t* win) {
         int max_visible_w = win->width - 30; // Sağdaki [X] kapatma butonu için pay bırakıyoruz
 
         for (int i = 0; i < win->tab_count; i++) {
-            int tab_x = win->x + 4 + (i * (tab_w + 2));
+            int ideal_x = win->x + 4 + (i * (tab_w + 2));
+            
+            if (i != dragged_tab_index) {
+                win->tabs[i].target_x = ideal_x;
+            }
 
-            // [X] butonunun üzerine taşmayı engelle
+            if (win->tabs[i].current_x == 0) {
+                win->tabs[i].current_x = ideal_x;
+            } else {
+                int diff = win->tabs[i].target_x - win->tabs[i].current_x;
+                if (diff != 0) {
+                    win->tabs[i].current_x += diff / 4;
+                    damage_union_rect(win->x, win->y, win->width, 24);
+                }
+            }
+
+            int tab_x = win->tabs[i].current_x; // Artık win->x bazlı hesaplanıyor
+
             if (tab_x + tab_w > win->x + max_visible_w) break;
 
-            // Aktif sekme arka planı pencere rengiyle bütünleşsin, pasif olanlar biraz koyu kalsın
             uint32_t tab_bg = (i == win->active_tab_index) ? win->bg_color : 0xFF2D2D2D;
-
-            // --- YENİ: Sadece üst köşeleri yuvarlatılmış sekme kutucuğu (radius_tl = 4, radius_tr = 4, altlar = 0) ---
             gfx_fill_rounded_rect_advanced(tab_x, win->y + 2, tab_w, 22, 4, 4, 0, 0, tab_bg);
-
-            // Sekme başlığı metni
             gfx_draw_text_utf8(tab_x + 8, win->y + 6, 0xFFFFFFFF, win->tabs[i].title);
         }
     } else {
@@ -647,6 +660,7 @@ void wm_process_input(void) {
 
     // 1. If the left button was released, dragging or resizing must end.
     if (!left_pressed) {
+        dragged_tab_index = -1;
         if (dragged_window || resized_window) {
             cursor_prepare_redraw();
             if (dragged_window) {
@@ -861,18 +875,22 @@ void wm_process_input(void) {
                 if (mouse_y >= target->y && mouse_y < target->y + WM_TITLEBAR_HEIGHT) {
                     bool clicked_on_tab = false;
 
-                    // Eğer pencerede sekmeler varsa başlık çubuğu tıklamasını kontrol et
+                    /// Sekmeye tıklandığı yer:
                     if (target->has_tabs) {
+                        int tab_w = 92;
                         int rel_x = mouse_x - (target->x + 4);
-                        int tab_w = 92; // Genişlik + boşluk
                         int clicked_idx = rel_x / tab_w;
 
-                        // Tıklanan yer bir sekmenin sınırları içerisindeyse
                         if (clicked_idx >= 0 && clicked_idx < target->tab_count) {
                             target->active_tab_index = clicked_idx;
                             clicked_on_tab = true;
 
-                            // İŞTE BURAYA EKLİYORUZ: Sekme değiştiğinde pencerenin alanını yenilenmeye zorla
+                            dragged_tab_index = clicked_idx;
+                            
+                            // [YENİ] Tıkladığımız an farenin sekmenin sol kenarına olan mesafesini hesapla
+                            int tab_current_x = target->tabs[clicked_idx].current_x;
+                            tab_grab_offset_x = mouse_x - tab_current_x;
+
                             damage_union_rect(target->x, target->y, target->width, target->height);
                             desktop_redraw();
                         }
@@ -941,6 +959,47 @@ void wm_process_input(void) {
 
     // 3. The left button is held and the mouse is moving (dragging or resizing continues)
     else if (left_pressed && prev_left) {
+        // --- SEKME SÜRÜKLEME VE YER DEĞİŞTİRME ---
+        if (dragged_tab_index != -1 && active_window && active_window->has_tabs) {
+            int tab_w = 92; 
+            
+            // Başlangıçtaki tıklama ofsetini koruyarak hedef konumu belirle
+            int target_relative_x = mouse_x - tab_grab_offset_x - active_window->x;
+            int new_target_x = active_window->x + target_relative_x;
+
+            // --- [YENİ] SOL VE SAĞ SINIR KONTROLÜ (CLAMP) ---
+            int min_x = active_window->x + 4;                                    // En sol sınır
+            int max_x = active_window->x + active_window->width - 30 - tab_w;   // Sağdaki [X] butonundan önceki son sınır
+
+            if (new_target_x < min_x) new_target_x = min_x;
+            if (new_target_x > max_x) new_target_x = max_x;
+
+            active_window->tabs[dragged_tab_index].target_x = new_target_x;
+
+            // Hangi sekmedeyiz kontrolü
+            int current_visual_idx = (active_window->tabs[dragged_tab_index].target_x - min_x) / tab_w;
+            if (current_visual_idx < 0) current_visual_idx = 0;
+            if (current_visual_idx >= active_window->tab_count) current_visual_idx = active_window->tab_count - 1;
+
+            // Swap (Yer değiştirme)
+            if (current_visual_idx != dragged_tab_index) {
+                browser_tab_t temp = active_window->tabs[dragged_tab_index];
+                active_window->tabs[dragged_tab_index] = active_window->tabs[current_visual_idx];
+                active_window->tabs[current_visual_idx] = temp;
+
+                if (active_window->active_tab_index == dragged_tab_index) {
+                    active_window->active_tab_index = current_visual_idx;
+                } else if (active_window->active_tab_index == current_visual_idx) {
+                    active_window->active_tab_index = dragged_tab_index;
+                }
+
+                dragged_tab_index = current_visual_idx;
+            }
+
+            damage_union_rect(active_window->x, active_window->y, active_window->width, 24);
+            desktop_redraw();
+        }
+
         if (resized_window && resize_direction != RESIZE_NONE) {
             int old_x = resized_window->x;
             int old_y = resized_window->y;
