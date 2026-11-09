@@ -532,18 +532,15 @@ void desktop_process_input(void) {
 
     // 5. If the cursor moved or actions occurred, mark relevant areas as damaged
     if (old_x != new_x || old_y != new_y || scancode != 0) {
-        damage_union_rect(old_x, old_y, cursor_w, cursor_h); // Clear the old position
-        damage_union_rect(new_x, new_y, cursor_w, cursor_h); // Draw the new position
+        damage_union_rect(old_x, old_y, cursor_w, cursor_h);
+        damage_union_rect(new_x, new_y, cursor_w, cursor_h);
         
-        // Ensure the menu also refreshes when the mouse moves while the context menu is open
         if (menu_is_open()) {
-            damage_union_rect(new_x, new_y, 140, 100);
+            damage_union_rect(new_x - 20, new_y - 20, 180, 120); 
         }
 
-        // Sol üstteki genişletilmiş donanım panelinin alanını hasarlı bölgeye ekle
         damage_union_rect(10, 10, 240, 92);
 
-        // Trigger a redraw
         desktop_redraw();
     }
 }

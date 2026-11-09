@@ -38,11 +38,23 @@ void menu_draw(void) {
     gfx_fill_rect(x, y, 1, h, 0xFF666666);         // Sol
     gfx_fill_rect(x + w - 1, y, 1, h, 0xFF111111); // Sağ
 
-    // Öğeleri Çiz
+    // Aktif fare konumunu alalım
+    int cur_x = cursor_get_x();
+    int cur_y = cursor_get_y();
+
+    // Öğeleri Çiz ve Hover Kontrolü Yap
     for (int i = 0; i < active_context_menu.item_count; i++) {
         int item_y = y + 4 + (i * 24);
         
-        // İsteğe bağlı: Fare üzerindeyse hover efekti eklenebilir
+        // Farenin bu öğenin üzerinde olup olmadığını kontrol et
+        bool is_hovered = (cur_x >= x + 4 && cur_x <= x + w - 4 &&
+                           cur_y >= item_y && cur_y <= item_y + 24);
+
+        // Hover durumuna göre arka plan rengini değiştir (Hover'da daha açık gri)
+        uint32_t item_bg = is_hovered ? 0xFF3A3A3A : 0xFF222222;
+        gfx_fill_rect(x + 4, item_y, w - 8, 24, item_bg);
+
+        // Metni çiz
         gfx_draw_text_utf8(x + 12, item_y + 4, 0xFFFFFFFF, active_context_menu.items[i].text);
     }
 }
