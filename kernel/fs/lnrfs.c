@@ -10,9 +10,11 @@
 
 static lnrfs_superblock_t sb_cache;
 static int lnrfs_is_mounted = 0;
+static uint32_t lnrfs_partition_lba_offset = 0; // MBR'den gelen sda2 başlangıç LBA offset değeri
 
-int lnrfs_mount(void) {
-    serial_write("[LNRFS] Mounting process is starting....\n");
+int lnrfs_mount_at_offset(uint32_t lba_offset) {
+    serial_write("[LNRFS] Mounting process is starting (with MBR offset)...\n");
+    lnrfs_partition_lba_offset = lba_offset;
 
     uint8_t* sector_buffer = (uint8_t*)kmalloc(512);
     if (!sector_buffer) {
@@ -20,8 +22,8 @@ int lnrfs_mount(void) {
         return -1;
     }
 
-    // We follow the ATA driver's actual signature: (drive, lba, count, buf)
-    ata_read_sectors(0, 0, 1, sector_buffer);
+    // MBR partition offset (sda2 başlangıcı) üzerine lnrfs_superblock_t okunuyor
+    ata_read_sectors(0, lnrfs_partition_lba_offset, 1, sector_buffer);
 
     // Copy the read data to the cache structure.
     memcpy(&sb_cache, sector_buffer, sizeof(lnrfs_superblock_t));
@@ -33,7 +35,10 @@ int lnrfs_mount(void) {
         return -1;
     }
 
-    serial_write("[LNRFS] Superblock successfully verified!\n");
+    serial_write("[LNRFS] Superblock successfully verified at partition offset!\n");
+    serial_write("[LNRFS] -> Partition LBA Offset: ");
+    serial_write_num(lnrfs_partition_lba_offset);
+    serial_write("\n");
     serial_write("[LNRFS] -> Total Number of Blocks: ");
     serial_write_num(sb_cache.total_blocks);
     serial_write("\n");
@@ -47,6 +52,11 @@ int lnrfs_mount(void) {
     lnrfs_is_mounted = 1;
     serial_write("[LNRFS] File system successfully mounted!\n");
     return 0;
+}
+
+// Eski kodlarla geriye dönük uyumluluk için
+int lnrfs_mount(void) {
+    return lnrfs_mount_at_offset(0);
 }
 
 int lnrfs_find_inode(const char* filename, lnrfs_inode_t* out_inode) {
@@ -76,8 +86,8 @@ int lnrfs_find_inode(const char* filename, lnrfs_inode_t* out_inode) {
         return -1;
     }
 
-    // Read the entire inode table at once
-    ata_read_sectors(0, table_lba, inode_table_sectors, sector_buf);
+    // Read the entire inode table at once (Partition offset eklendi)
+    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     int found = -1;
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
@@ -94,7 +104,7 @@ int lnrfs_find_inode(const char* filename, lnrfs_inode_t* out_inode) {
                 serial_write("]\n");
             }
 
-            // Exact match OR path-suffix match check (e.g., "test.txt" -> "Users/anil/Desktop/test.txt")
+            // Exact match OR path-suffix match check
             int match = 0;
             if (strcmp(inode->filename, filename) == 0) {
                 match = 1;
@@ -157,29 +167,14 @@ void* lnrfs_read_file(const char* filename, uint32_t* out_size) {
         return NULL;
     }
 
-    // --- DETAILED DEBUG INFORMATION (Only if enabled) ---
-    if (LNRFS_DEBUG_ENABLED) {
-        serial_write("[LNRFS DEBUG] File Name: ");
-        serial_write((char*)filename);
-        serial_write("\n[LNRFS DEBUG] Inode Size: ");
-        serial_write_num(inode.size);
-        serial_write("\n[LNRFS DEBUG] Inode Start Block: ");
-        serial_write_num(inode.start_block);
-        serial_write("\n[LNRFS DEBUG] Data Block Start: ");
-        serial_write_num(sb_cache.data_block_start);
-        serial_write("\n");
-    }
-    // ----------------------------------
-
     uint32_t size = inode.size;
-    uint8_t* file_buffer = (uint8_t*)kmalloc(size + 1); // +1 for safe null terminator
+    uint8_t* file_buffer = (uint8_t*)kmalloc(size + 1);
     if (!file_buffer) {
         serial_write("[LNRFS ERROR] Memory allocation failed for file content!\n");
         if (out_size) *out_size = 0;
         return NULL;
     }
 
-    // Calculate how many sectors need to be read (512 bytes per sector)
     uint32_t sectors_needed = (size + 511) / 512;
     if (sectors_needed == 0) sectors_needed = 1;
 
@@ -194,7 +189,8 @@ void* lnrfs_read_file(const char* filename, uint32_t* out_size) {
 
     uint32_t bytes_read = 0;
     for (uint32_t i = 0; i < sectors_needed; i++) {
-        ata_read_sectors(0, start_lba + i, 1, sector_sec);
+        // Partition offset hesaba katılarak veri sektörü okunuyor
+        ata_read_sectors(0, lnrfs_partition_lba_offset + start_lba + i, 1, sector_sec);
         
         uint32_t copy_len = 512;
         if (bytes_read + copy_len > size) {
@@ -206,7 +202,7 @@ void* lnrfs_read_file(const char* filename, uint32_t* out_size) {
     }
 
     kfree(sector_sec);
-    file_buffer[size] = '\0'; // String terminator
+    file_buffer[size] = '\0';
 
     if (out_size) {
         *out_size = size;
@@ -225,7 +221,6 @@ int lnrfs_get_dir_files(const char* rel_path, vfs_file_info_t* out_list, int max
         return 0;
     }
 
-    // Clear C:\ or / prefixes from the incoming path
     if (rel_path[0] == '/' || rel_path[0] == '\\') {
         rel_path++;
     } else if (rel_path[1] == ':' && (rel_path[2] == '/' || rel_path[2] == '\\')) {
@@ -245,7 +240,8 @@ int lnrfs_get_dir_files(const char* rel_path, vfs_file_info_t* out_list, int max
         return 0;
     }
 
-    ata_read_sectors(0, table_lba, inode_table_sectors, sector_buf);
+    // Partition offset ile inode tablosu okunuyor
+    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     int count = 0;
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
@@ -338,7 +334,7 @@ int lnrfs_create_file(const char* path) {
         return -1;
     }
 
-    ata_read_sectors(0, table_lba, inode_table_sectors, sector_buf);
+    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
     int free_slot = -1;
@@ -366,7 +362,7 @@ int lnrfs_create_file(const char* path) {
     new_inode->size = 0;
     new_inode->start_block = 0;
 
-    ata_write_sectors(0, table_lba, inode_table_sectors, sector_buf);
+    ata_write_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
     kfree(sector_buf);
 
     serial_write("[LNRFS] File created successfully: ");
@@ -393,7 +389,7 @@ int lnrfs_mkdir(const char* path) {
     uint8_t* sector_buf = (uint8_t*)kmalloc(total_buffer_size);
     if (!sector_buf) return -1;
 
-    ata_read_sectors(0, table_lba, inode_table_sectors, sector_buf);
+    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
     int free_slot = -1;
@@ -415,7 +411,7 @@ int lnrfs_mkdir(const char* path) {
         new_inode->is_directory = 1;
         new_inode->size = 0;
 
-        ata_write_sectors(0, table_lba, inode_table_sectors, sector_buf);
+        ata_write_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
         serial_write("[LNRFS] Directory created: ");
         serial_write((char*)path);
         serial_write("\n");

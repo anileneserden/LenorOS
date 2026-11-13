@@ -21,7 +21,7 @@ typedef struct {
     char     filename[LNRFS_MAX_FILENAME];   
 } __attribute__((packed)) lnrfs_inode_t;
 
-int lnrfs_mount(void);
+int lnrfs_mount_at_offset(uint32_t lba_offset);
 int lnrfs_find_inode(const char* filename, lnrfs_inode_t* out_inode);
 void* lnrfs_read_file(const char* filename, uint32_t* out_size);
 int lnrfs_get_dir_files(const char* rel_path, vfs_file_info_t* out_list, int max_count);

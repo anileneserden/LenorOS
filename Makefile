@@ -54,6 +54,7 @@ SRC_C = \
     kernel/mem/heap.c \
     kernel/mem/pmm.c \
     kernel/mem/vmm.c \
+    kernel/storage/mbr.c \
     libc/math.c \
     libc/stdlib.c \
     ui/cursor.c \

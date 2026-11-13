@@ -87,15 +87,15 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
         serial_write("FAT32: Driver could not be started!\n");
     }
 
-    // LNRFS Mount and VFS Integration (C Drive)
-    if (lnrfs_mount() == 0) {
+    // MBR'den sda2 (LNRFS) offset değerini al
+    uint32_t lnrfs_lba_offset = mbr_get_lnrfs_offset();
+    
+    // Offset ile mount et
+    if (lnrfs_mount_at_offset(lnrfs_lba_offset) == 0) {
         fs_driver_t lnrfs_driver = lnrfs_get_driver();
         vfs_mount('C', "LNRFS_VOL", lnrfs_driver);
         serial_write("LNRFS mounted successfully and registered to VFS on C:\\.\n");
-        
-        // Bu çağrının bu parantezlerin içinde olduğundan emin olun:
         run_tls_mock_test();
-
     } else {
         serial_write("LNRFS: Driver could not be started!\n");
     }
