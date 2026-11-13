@@ -48,6 +48,7 @@ SRC_C = \
     kernel/fs/fat32.c \
     kernel/fs/lnrfs.c \
     kernel/fs/vfs.c \
+    kernel/loader/ico.c \
     kernel/loader/lex.c \
     kernel/loader/lex2.c \
     kernel/loader/png.c \

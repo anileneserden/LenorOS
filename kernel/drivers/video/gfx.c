@@ -271,9 +271,36 @@ void gfx_draw_buffer(int x, int y, int width, int height, const uint32_t* buffer
             if (px < 0 || (uint32_t)px >= sw) continue;
 
             uint32_t color = buffer[cy * buffer_stride + cx];
-            // Eğer alfa kanalı destekleyen tam şeffaf pikselleri atlamak istersen buraya kontrol koyabilirsin,
-            // direkt basmak için:
-            fb_putpixel(px, py, color);
+            
+            // RGBA / BGRA renk bileşenlerini ve alpha kanalını ayırıyoruz
+            uint8_t alpha = (color >> 24) & 0xFF;
+
+            // Eğer piksel tamamen şeffafsa hiç çizme (arkaplan görünsün)
+            if (alpha == 0) continue;
+
+            // Eğer piksel tamamen opaksa (alpha == 255) doğrudan basarak hız kazanalım
+            if (alpha == 255) {
+                fb_putpixel(px, py, color);
+                continue;
+            }
+
+            // Yarı şeffaf pikseller için Alpha Blending (Saydamlık Harmanlaması)
+            uint8_t r = (color >> 16) & 0xFF;
+            uint8_t g = (color >> 8) & 0xFF;
+            uint8_t b = color & 0xFF;
+
+            uint32_t bg_color = fb_getpixel(px, py);
+            uint8_t bg_r = (bg_color >> 16) & 0xFF;
+            uint8_t bg_g = (bg_color >> 8) & 0xFF;
+            uint8_t bg_b = bg_color & 0xFF;
+
+            // Renk harmanlama formülü: Result = (Source * Alpha + Background * (255 - Alpha)) / 255
+            uint8_t res_r = (r * alpha + bg_r * (255 - alpha)) / 255;
+            uint8_t res_g = (g * alpha + bg_g * (255 - alpha)) / 255;
+            uint8_t res_b = (b * alpha + bg_b * (255 - alpha)) / 255;
+
+            uint32_t final_color = (0xFF << 24) | (res_r << 16) | (res_g << 8) | res_b;
+            fb_putpixel(px, py, final_color);
         }
     }
 }

@@ -162,7 +162,7 @@ void desktop_redraw(void) {
         }
     }
 
-    // 4. --- MASAÜSTÜ İKONLARINI ÇİZ (Pencerelerin altında kalması için önce çiziliyor) ---
+    // 4. --- MASAÜSTÜ İKONLARINI ÇİZ ---
     int cur_x = cursor_get_x();
     int cur_y = cursor_get_y();
     desktop_icons_draw(cur_x, cur_y, false);
@@ -176,6 +176,7 @@ void desktop_redraw(void) {
     int info_w = 240;
     int info_h = 92;
 
+    /*
     // Panel arkaplanı ve çerçevesi
     gfx_fill_rect(info_x, info_y, info_w, info_h, 0xFF1E1E1E);
     gfx_draw_rect(info_x, info_y, info_w, info_h, 0xFF505050);
@@ -214,6 +215,7 @@ void desktop_redraw(void) {
     gfx_draw_text(info_x + 8, info_y + 48, 0xFF00FF66, buf_port);
     gfx_draw_text(info_x + 8, info_y + 68, 0xFF00FF66, buf_buttons);
     // ---------------------------------------
+    */
 
     // 5. Bottom taskbar - draw it on the topmost layer (above windows)
     int taskbar_h = 36;
