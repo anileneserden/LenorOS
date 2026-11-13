@@ -341,9 +341,20 @@ void wm_draw_window(window_t* win) {
         int pw = p->width;
         int ph = p->height;
 
-        // Kırpma (Clipping) kontrolleri
-        if (rel_x < 0) { pw += rel_x; rel_x = 0; }
-        if (rel_y < 24) { ph += (rel_y - 24); rel_y = 24; }
+        int src_x = 0;
+        int src_y = 0;
+
+        // Kırpma (Clipping) kontrolleri ve kaynak (source) ofsetleri
+        if (rel_x < 0) { 
+            src_x = -rel_x;     // Soldan kırpıldıysa kaynakta sağa kay
+            pw += rel_x; 
+            rel_x = 0; 
+        }
+        if (rel_y < 24) { 
+            src_y = 24 - rel_y; // Üstten kırpıldıysa kaynakta aşağı kay
+            ph += (rel_y - 24); 
+            rel_y = 24; 
+        }
 
         if (rel_x < win->width && rel_y < win->height) {
             if (rel_x + pw > win->width) pw = win->width - rel_x;
@@ -353,8 +364,11 @@ void wm_draw_window(window_t* win) {
                 int abs_x = win->x + rel_x;
                 int abs_y = win->y + rel_y;
 
-                // Eğer resim verisi yüklendiyse framebuffer/grafik arabelleğine çiz
-                gfx_draw_buffer(abs_x, abs_y, pw, ph, p->pixels, p->img_width);
+                // Kaynak piksellerin başlangıç adresini ofset kadar kaydırıyoruz
+                uint32_t* src_pixels = p->pixels + (src_y * p->img_width + src_x);
+
+                // Düzeltilmiş kaynak adresi ve orijinal genişlik (stride) ile çiz
+                gfx_draw_buffer(abs_x, abs_y, pw, ph, src_pixels, p->img_width);
             }
         }
     }
@@ -525,6 +539,11 @@ static int get_resize_direction(window_t* win, int x, int y) {
 static window_t* wm_bring_to_front(window_t* win) {
     if (!win || window_count <= 1) return win;
 
+    // Eski aktif pencerenin başlık çubuğunu ve gövdesini kirli işaretle
+    if (active_window && active_window != win) {
+        damage_union_rect(active_window->x, active_window->y, active_window->width, active_window->height);
+    }
+
     int idx = -1;
     for (int i = 0; i < window_count; i++) {
         if (&window_list[i] == win) {
@@ -538,6 +557,7 @@ static window_t* wm_bring_to_front(window_t* win) {
     if (idx == window_count - 1) {
         win->is_active = true;
         active_window = win;
+        damage_union_rect(win->x, win->y, win->width, win->height); // Yeni pencereyi kirli işaretle
         return win;
     }
 
@@ -555,7 +575,8 @@ static window_t* wm_bring_to_front(window_t* win) {
     
     active_window = &window_list[window_count - 1];
     
-    damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+    // Öne gelen yeni pencerenin alanını tamamen (başlık çubuğu dahil) yeniden çizime dahil et
+    damage_union_rect(active_window->x, active_window->y, active_window->width, active_window->height);
     return active_window;
 }
 
@@ -709,6 +730,9 @@ void wm_process_input(void) {
         window_t* target = wm_find_at(mouse_x, mouse_y);
         if (target) {
             window_t* front_win = wm_bring_to_front(target);
+
+            // İŞTE BURAYA EKLENECEK: Tıklanan pencerenin başlık çubuğu ve gövdesini tazele
+            damage_union_rect(target->x, target->y, target->width, target->height);
 
             int btn_x = target->x + target->width - 22;
             int btn_y = target->y + 3;

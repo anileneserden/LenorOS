@@ -178,29 +178,50 @@ static int lex_picturebox_create(int x, int y, int w, int h, const char* img_pat
     while (img_path[i] != '\0' && i < 63) { p->image_path[i] = img_path[i]; i++; }
     p->image_path[i] = '\0';
 
-    // 1. LEX paketinin içinden resmi bul
+    uint8_t* img_raw_data = 0;
     uint32_t img_data_size = 0;
-    uint8_t* img_raw_data = lex_find_resource_in_memory(img_path, &img_data_size);
 
-    if (!img_raw_data || img_data_size == 0) {
-        serial_write("[LEX ERROR] Picturebox resmi LEX paketinde bulunamadı: ");
+    // GÜVENLİ YOL KONTROLÜ: Eğer yol "C:/" ile başlıyorsa doğrudan diskten (VFS) oku!
+    if (img_path[0] == 'C' && img_path[1] == ':' && (img_path[2] == '/' || img_path[2] == '\\')) {
+        serial_write("[LEX] Picturebox resmi VFS disk üzerinden okunuyor: ");
         serial_write(img_path);
         serial_write("\n");
-        return -1;
+
+        img_raw_data = (uint8_t*)vfs_read_file(img_path, &img_data_size);
+        if (!img_raw_data || img_data_size == 0) {
+            serial_write("[LEX ERROR] VFS üzerinden resim dosyası okunamadı: ");
+            serial_write(img_path);
+            serial_write("\n");
+            return -1;
+        }
+    } else {
+        // Eski yöntem: LEX paketinin içindeki kaynaklardan bul
+        img_raw_data = lex_find_resource_in_memory(img_path, &img_data_size);
+        if (!img_raw_data || img_data_size == 0) {
+            serial_write("[LEX ERROR] Picturebox resmi LEX paketinde bulunamadı: ");
+            serial_write(img_path);
+            serial_write("\n");
+            return -1;
+        }
     }
 
-    // 2. Ham PNG verisini bellekten decode et
+    // Ham PNG verisini bellekten decode et
     png_image_t* img = png_load_from_memory(img_raw_data, img_data_size);
+    
+    // Eğer veriyi VFS'den (diskten) okuduysak dinamik belleği işimiz bitince serbest bırakmalıyız
+    if (img_path[0] == 'C' && img_raw_data) {
+        kfree(img_raw_data);
+    }
+
     if (!img) {
         serial_write("[LEX ERROR] PNG bellekten decode edilemedi!\n");
         return -1;
     }
 
-    // 3. Çözülen pikselleri ve boyutları picturebox yapısına aktar
+    // Çözülen pikselleri ve boyutları picturebox yapısına aktar
     p->img_width = img->width;
     p->img_height = img->height;
     
-    // Pikseller için bellek ayır ve kopyala
     size_t pixel_buf_size = img->width * img->height * sizeof(uint32_t);
     p->pixels = (uint32_t*)kmalloc(pixel_buf_size);
     if (p->pixels && img->pixels) {
