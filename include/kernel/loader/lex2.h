@@ -36,18 +36,19 @@ typedef struct {
 } __attribute__((packed)) lex2_resource_entry_t;
 
 typedef struct {
-    int (*window_create)(const char* title, int width, int height);
+    int (*window_create)(const char* title, int width, int height, bool resizable);
+    void* (*window_create_with_tabs)(int width, int height, const char* title, int initial_tab_count);
     void (*print)(const char* str);
     void (*exit)(void);
     int (*label_create)(int x, int y, uint32_t color, const char* text, uint8_t anchor);
     int (*panel_create)(int x, int y, int w, int h, uint32_t color, uint32_t hover_color, void (*on_click)(void), void (*on_hover)(void), uint8_t anchor);
     int (*button_create)(int x, int y, int w, int h, uint32_t bg_color, uint32_t text_color, const char* text, void (*on_click)(void), uint8_t anchor);
-    int (*picturebox_create)(int x, int y, int w, int h, const char* img_path, uint8_t anchor);
+    int (*picturebox_create)(int x, int y, int w, int h, const char* img_path, uint8_t anchor, int size_mode);
     int (*input_create)(int x, int y, int w, int h, 
                         const char* text, const char* placeholdertext, 
                         uint32_t backcolor, uint32_t color, 
                         uint32_t placeholder_color, uint32_t border_color, 
-                        int border_thickness, uint8_t anchor);
+                        int border_thickness, void (*on_key)(char c), uint8_t anchor);
     int (*input_get_text)(int input_id, char* out_buf, int max_len);
     int (*combobox_create)(int x, int y, int w, int h, const char** items, int item_count, int default_index, uint32_t bg_color, uint32_t text_color, uint32_t border_color, uint8_t anchor);
     int (*get_directory_files)(const char* full_path, vfs_file_info_t* out_list, int max_count);
@@ -61,6 +62,9 @@ typedef struct {
     void (*reboot_system)(void);
     void (*shutdown_system)(void);
     bool (*is_key_pressed)(int key_code);
+    int (*browser_create)(int x, int y, int w, int h, uint8_t anchor);
+    void (*browser_load_html)(const char* html);
+    void (*set_tab_icon_from_memory)(const void* ico_data, uint32_t ico_size);
 } lex_api_t;
 
 typedef int (*lex_entry_t)(void);

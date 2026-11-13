@@ -9,6 +9,7 @@
 #include <kernel/power.h>
 #include <kernel/drivers/input/keyboard_ps2.h>
 #include <kernel/loader/png.h>
+#include <kernel/loader/ico.h>
 
 #define WM_TITLEBAR_HEIGHT 24
 
@@ -23,6 +24,10 @@ static void lex_print(const char* str) {
 static int lex_window_create(const char* title, int width, int height) {
     window_t* window = wm_create_window(width, height, title);
     return window != 0;
+}
+
+static void* lex_window_create_with_tabs(int width, int height, const char* title, int initial_tab_count) {
+    return wm_create_window_with_tabs(width, height, title, initial_tab_count);
 }
 
 static void lex_background_color(uint32_t color) {
@@ -359,9 +364,51 @@ static void lex_reboot_system(void) { system_reboot(); }
 static void lex_shutdown_system(void) { system_shutdown(); }
 static bool lex_is_key_pressed(int key_code) { return keyboard_is_key_pressed(key_code); }
 
+static void lex_set_tab_icon_from_memory(const void* ico_data, uint32_t ico_size) {
+    window_t* win = wm_get_active_window();
+    if (!win || !win->has_tabs || win->tab_count <= 0) return;
+
+    // Aktif sekmeyi seçiyoruz
+    int active_idx = win->active_tab_index;
+    if (active_idx < 0 || active_idx >= win->tab_count) active_idx = 0;
+
+    browser_tab_t* tab = &win->tabs[active_idx];
+
+    // Ham ICO verisini bellekten decode et
+    png_image_t* ico_img = ico_load_from_memory((const uint8_t*)ico_data, ico_size);
+    if (!ico_img || !ico_img->pixels) {
+        serial_write("[LEX ERROR] Sekme ikonu (ICO) decode edilemedi!\n");
+        return;
+    }
+
+    tab->icon_w = ico_img->width;
+    tab->icon_h = ico_img->height;
+
+    size_t pix_size = tab->icon_w * tab->icon_h * sizeof(uint32_t);
+    
+    // Eğer daha önceden atanmış bir ikon belleği varsa temizleyebiliriz
+    if (tab->icon_pixels) {
+        kfree(tab->icon_pixels);
+    }
+
+    tab->icon_pixels = (uint32_t*)kmalloc(pix_size);
+    if (tab->icon_pixels && ico_img->pixels) {
+        memcpy(tab->icon_pixels, ico_img->pixels, pix_size);
+        serial_write("[LEX] Sekme ikonu basariyla bellege islendi!\n");
+    }
+
+    png_free_image(ico_img);
+
+    // Pencereyi ve ekranı tazele ki yeni ikon hemen görünsün
+    damage_union_rect(win->x, win->y, win->width, win->height);
+    wm_draw_window(win);
+    desktop_redraw();
+}
+
 static void lex_install_api(void) {
     volatile lex_api_t* api = (volatile lex_api_t*)LEX_API_ADDRESS;
     api->window_create = lex_window_create;
+    api->window_create_with_tabs = lex_window_create_with_tabs;
     api->print = lex_print;
     api->exit = lex_exit;
     api->label_create = lex_label_create;
@@ -382,6 +429,7 @@ static void lex_install_api(void) {
     api->reboot_system = lex_reboot_system;
     api->shutdown_system = lex_shutdown_system;
     api->is_key_pressed = lex_is_key_pressed;
+    api->set_tab_icon_from_memory = lex_set_tab_icon_from_memory;
 }
 
 // LEXv2 Yükleyici Fonksiyonu

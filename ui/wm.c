@@ -3,6 +3,7 @@
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
 #include <kernel/serial.h>
+#include <kernel/string.h>
 #include <ui/cursor.h>
 #include <kernel/loader/lex.h>
 #include <stddef.h>
@@ -207,10 +208,10 @@ void wm_draw_window(window_t* win) {
         : (win->is_active ? 0xFF007ACC : 0xFF505050);
     gfx_fill_rect(win->x, win->y, win->width, 24, title_color);
 
-    // 4. Sekmeler varsa başlık çubuğunun İÇİNE sekmeleri çiz, yoksa normal başlık metnini yaz
+    // 4. Sekmeler varsa başlık çubuğunun İÇİNE sekmeleri ve sollarına ikonlarını çiz
     if (win->has_tabs) {
         int tab_w = 90;
-        int max_visible_w = win->width - 30; // Sağdaki [X] kapatma butonu için pay bırakıyoruz
+        int max_visible_w = win->width - 30; // Sağdaki [X] kapatma butonu için pay
 
         for (int i = 0; i < win->tab_count; i++) {
             int tab_x = win->x + 4 + (i * (tab_w + 2));
@@ -218,14 +219,24 @@ void wm_draw_window(window_t* win) {
             // [X] butonunun üzerine taşmayı engelle
             if (tab_x + tab_w > win->x + max_visible_w) break;
 
-            // Aktif sekme arka planı pencere rengiyle bütünleşsin, pasif olanlar biraz koyu kalsın
-            uint32_t tab_bg = (i == win->active_tab_index) ? win->bg_color : 0xFF2D2D2D;
+            // --- DÜZELTME BURADA ---
+            // Sekme arkaplanlarını sayfa arkaplanından (win->bg_color) bağımsız yapıyoruz.
+            // Aktif sekme: Belirgin gri (0xFF3C3C3C), Pasif sekme: Koyu gri (0xFF222222)
+            uint32_t tab_bg = (i == win->active_tab_index) ? 0xFF3C3C3C : 0xFF222222;
 
-            // --- YENİ: Sadece üst köşeleri yuvarlatılmış sekme kutucuğu (radius_tl = 4, radius_tr = 4, altlar = 0) ---
+            // Üst köşeleri yuvarlatılmış sekme kutucuğu
             gfx_fill_rounded_rect_advanced(tab_x, win->y + 2, tab_w, 22, 4, 4, 0, 0, tab_bg);
 
-            // Sekme başlığı metni
-            gfx_draw_text_utf8(tab_x + 8, win->y + 6, 0xFFFFFFFF, win->tabs[i].title);
+            // --- DİNAMİK SEKME İKONU ÇİZİMİ ---
+            if (win->tabs[i].icon_pixels && win->tabs[i].icon_w > 0) {
+                int icon_draw_x = tab_x + 6;
+                int icon_draw_y = win->y + 5;
+                gfx_draw_buffer(icon_draw_x, icon_draw_y, 14, 14, win->tabs[i].icon_pixels, win->tabs[i].icon_w);
+            }
+
+            // Sekme başlığı metni (Beyaz yazı, koyu sekme arkaplanında net şekilde görünür)
+            int text_offset = (win->tabs[i].icon_pixels && win->tabs[i].icon_w > 0) ? 24 : 8;
+            gfx_draw_text_utf8(tab_x + text_offset, win->y + 6, 0xFFFFFFFF, win->tabs[i].title);
         }
     } else {
         // Normal pencere başlığı metni
