@@ -145,6 +145,35 @@ window_t* wm_create_window_with_tabs(int width, int height, const char* title, i
     return win;
 }
 
+static void wm_close_tab(window_t* win, int tab_idx) {
+    if (!win || win->tab_count <= 0) return;
+
+    // Eğer tek sekme kaldıysa pencereyi tamamen kapat
+    if (win->tab_count <= 1) {
+        wm_close_window(win);
+        return;
+    }
+
+    // Kapatılan sekmenin ikon belleği varsa serbest bırak
+    if (win->tabs[tab_idx].icon_pixels) {
+        kfree(win->tabs[tab_idx].icon_pixels);
+        win->tabs[tab_idx].icon_pixels = 0;
+    }
+
+    // Sağdaki sekmeleri sola kaydır
+    for (int i = tab_idx; i < win->tab_count - 1; i++) {
+        win->tabs[i] = win->tabs[i + 1];
+    }
+    win->tab_count--;
+
+    // Aktif sekme indeksini güncelle
+    if (win->active_tab_index >= win->tab_count) {
+        win->active_tab_index = win->tab_count - 1;
+    } else if (win->active_tab_index > tab_idx) {
+        win->active_tab_index--;
+    }
+}
+
 void wm_close_window(window_t* win) {
     if (!win) return;
 
@@ -208,35 +237,53 @@ void wm_draw_window(window_t* win) {
         : (win->is_active ? 0xFF007ACC : 0xFF505050);
     gfx_fill_rect(win->x, win->y, win->width, 24, title_color);
 
-    // 4. Sekmeler varsa başlık çubuğunun İÇİNE sekmeleri ve sollarına ikonlarını çiz
+    // 4. Sekmeler varsa başlık çubuğunun İÇİNE sekmeleri, ikonlarını ve '+' butonunu çiz
     if (win->has_tabs) {
         int tab_w = 90;
         int max_visible_w = win->width - 30; // Sağdaki [X] kapatma butonu için pay
+        int last_tab_x = win->x + 4;
 
         for (int i = 0; i < win->tab_count; i++) {
             int tab_x = win->x + 4 + (i * (tab_w + 2));
+            last_tab_x = tab_x; 
 
             // [X] butonunun üzerine taşmayı engelle
             if (tab_x + tab_w > win->x + max_visible_w) break;
 
-            // --- DÜZELTME BURADA ---
-            // Sekme arkaplanlarını sayfa arkaplanından (win->bg_color) bağımsız yapıyoruz.
-            // Aktif sekme: Belirgin gri (0xFF3C3C3C), Pasif sekme: Koyu gri (0xFF222222)
             uint32_t tab_bg = (i == win->active_tab_index) ? 0xFF3C3C3C : 0xFF222222;
 
-            // Üst köşeleri yuvarlatılmış sekme kutucuğu
+            // Sekme kutucuğu
             gfx_fill_rounded_rect_advanced(tab_x, win->y + 2, tab_w, 22, 4, 4, 0, 0, tab_bg);
 
-            // --- DİNAMİK SEKME İKONU ÇİZİMİ ---
+            // Sekme İkonu (Favicon)
             if (win->tabs[i].icon_pixels && win->tabs[i].icon_w > 0) {
                 int icon_draw_x = tab_x + 6;
                 int icon_draw_y = win->y + 5;
                 gfx_draw_buffer(icon_draw_x, icon_draw_y, 14, 14, win->tabs[i].icon_pixels, win->tabs[i].icon_w);
             }
 
-            // Sekme başlığı metni (Beyaz yazı, koyu sekme arkaplanında net şekilde görünür)
+            // Sekme Başlığı
             int text_offset = (win->tabs[i].icon_pixels && win->tabs[i].icon_w > 0) ? 24 : 8;
             gfx_draw_text_utf8(tab_x + text_offset, win->y + 6, 0xFFFFFFFF, win->tabs[i].title);
+
+            // --- YENİ: SEKME İÇİ KIRMIZI 'x' KAPATMA BUTONU ---
+            int close_btn_x = tab_x + tab_w - 18;
+            int close_btn_y = win->y + 6;
+            gfx_fill_rect(close_btn_x, close_btn_y, 12, 12, 0xFFE81123);
+            gfx_draw_text_utf8(close_btn_x + 2, close_btn_y - 1, 0xFFFFFFFF, "x");
+        }
+
+        // --- YENİ: SON SEKMENİN SAĞINA '+' (YENİ SEKME) BUTONU ---
+        int plus_btn_x = last_tab_x + tab_w + 6;
+        int plus_btn_y = win->y + 4;
+        int close_btn_limit = win->x + win->width - 26;
+
+        // Eğer [X] butonuna çarpmıyorsa '+' butonunu çiz
+        if (plus_btn_x + 18 < close_btn_limit) {
+            // Küçük şık bir yuvarlatılmış kare buton
+            gfx_fill_rounded_rect_advanced(plus_btn_x, plus_btn_y, 18, 18, 4, 4, 4, 4, 0xFF2A2A2A);
+            // Ortasına '+' sembolü
+            gfx_draw_text_utf8(plus_btn_x + 5, plus_btn_y + 1, 0xFF888888, "+");
         }
     } else {
         // Normal pencere başlığı metni
@@ -896,24 +943,79 @@ void wm_process_input(void) {
                 if (mouse_y >= target->y && mouse_y < target->y + WM_TITLEBAR_HEIGHT) {
                     bool clicked_on_tab = false;
 
-                    // Eğer pencerede sekmeler varsa başlık çubuğu tıklamasını kontrol et
+                    // Eğer pencerede sekmeler varsa başlık çubuğu ve sekme tıklamalarını kontrol et
                     if (target->has_tabs) {
-                        int rel_x = mouse_x - (target->x + 4);
-                        int tab_w = 92; // Genişlik + boşluk
-                        int clicked_idx = rel_x / tab_w;
+                        int tab_w = 90;
+                        int max_visible_w = target->width - 30;
+                        int last_tab_x = target->x + 4;
 
-                        // Tıklanan yer bir sekmenin sınırları içerisindeyse
-                        if (clicked_idx >= 0 && clicked_idx < target->tab_count) {
-                            target->active_tab_index = clicked_idx;
-                            clicked_on_tab = true;
+                        // Son sekmenin X koordinatını buluyoruz (çizim mantığıyla birebir aynı)
+                        for (int i = 0; i < target->tab_count; i++) {
+                            int tab_x = target->x + 4 + (i * (tab_w + 2));
+                            last_tab_x = tab_x;
+                            if (tab_x + tab_w > target->x + max_visible_w) break;
+                        }
 
-                            // İŞTE BURAYA EKLİYORUZ: Sekme değiştiğinde pencerenin alanını yenilenmeye zorla
-                            damage_union_rect(target->x, target->y, target->width, target->height);
-                            desktop_redraw();
+                        int plus_btn_x = last_tab_x + tab_w + 6;
+                        int plus_btn_y = target->y + 4;
+                        int close_btn_limit = target->x + target->width - 26;
+
+                        // 1. ÖNCE '+' BUTONUNA TIKLANDI MI KONTROL ET
+                        if (plus_btn_x + 18 < close_btn_limit &&
+                            mouse_x >= plus_btn_x && mouse_x <= plus_btn_x + 18 &&
+                            mouse_y >= plus_btn_y && mouse_y <= plus_btn_y + 18) {
+                            
+                            // Maksimum sekme sınırını aşmıyorsa yeni sekme ekle
+                            if (target->tab_count < MAX_TABS) {
+                                int new_idx = target->tab_count;
+                                target->tab_count++;
+                                target->active_tab_index = new_idx;
+
+                                // Yeni sekmenin varsayılan özellikleri
+                                snprintf(target->tabs[new_idx].title, sizeof(target->tabs[new_idx].title), "Sekme %d", new_idx + 1);
+                                target->tabs[new_idx].url[0] = '\0';
+                                target->tabs[new_idx].icon_pixels = 0;
+                                target->tabs[new_idx].icon_w = 0;
+                                target->tabs[new_idx].icon_h = 0;
+
+                                clicked_on_tab = true;
+                                damage_union_rect(target->x, target->y, target->width, target->height);
+                                desktop_redraw();
+                            }
+                        } 
+                        else {
+                            // 2. MEVCUT SEKMELERE VE KIRMIZI 'x' BUTONLARINA TIKLANDI MI KONTROL ET
+                            int rel_x = mouse_x - (target->x + 4);
+                            int tab_stride = tab_w + 2; // Sekme genişliği + boşluk (92px)
+                            int clicked_idx = rel_x / tab_stride;
+
+                            if (clicked_idx >= 0 && clicked_idx < target->tab_count) {
+                                int tab_start_x = target->x + 4 + (clicked_idx * tab_stride);
+                                
+                                // Tıklanan nokta aradaki 2 piksellik boşluğa değil, doğrudan sekmenin üstüne mi?
+                                if (mouse_x >= tab_start_x && mouse_x < tab_start_x + tab_w) {
+                                    // Sekme içindeki kırmızı 'x' butonunun koordinatları
+                                    int close_btn_x = tab_start_x + tab_w - 18;
+                                    int close_btn_y = target->y + 6;
+
+                                    if (mouse_x >= close_btn_x && mouse_x <= close_btn_x + 12 &&
+                                        mouse_y >= close_btn_y && mouse_y <= close_btn_y + 12) {
+                                        // Kırmızı x'e tıklandı, sekmesini kapat!
+                                        wm_close_tab(target, clicked_idx);
+                                    } else {
+                                        // Normal sekme alanına tıklandı, aktif sekmeyi değiştir
+                                        target->active_tab_index = clicked_idx;
+                                    }
+
+                                    clicked_on_tab = true;
+                                    damage_union_rect(target->x, target->y, target->width, target->height);
+                                    desktop_redraw();
+                                }
+                            }
                         }
                     }
 
-                    // Bir sekmenin üzerine basılmadıysa (boş başlık çubuğu alanına basıldıysa) pencereyi sürükle
+                    // Bir sekmenin veya '+' butonunun üzerine basılmadıysa pencereyi sürükle
                     if (!clicked_on_tab) {
                         dragged_window = front_win;
                         dragged_window->is_dragging = true;
