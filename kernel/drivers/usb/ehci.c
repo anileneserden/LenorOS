@@ -221,6 +221,24 @@ static int ehci_control(const ehci_dev_t *dev, uint8_t req_type, uint8_t req,
     return got;
 }
 
+// USB Sürücüleri için genel kontrol transferi sarmalayıcısı (wrapper)
+int ehci_control_transfer(usb_setup_packet_t* setup, void* data, uint16_t length) {
+    if (!ehci_active) return -1;
+
+    // Not: RTL8192EU veya harici cihazlar bağlandığında kullanılacak varsayılan ep0 (address 1 veya aktif cihaz) yapısı.
+    // Şimdilik sistemdeki aktif aygıt parametreleriyle (varsayılan adres ve hız) kontrol transferini tetikliyoruz.
+    ehci_dev_t target_dev = {
+        .addr = 1,          // Varsayılan aygıt adresi (cihaz enum olduktan sonra güncellenebilir)
+        .speed = SPEED_HIGH,
+        .mps0 = 64,
+        .hub_addr = 0,
+        .hub_port = 0
+    };
+
+    return ehci_control(&target_dev, setup->bmRequestType, setup->bRequest,
+                        setup->wValue, setup->wIndex, length, data);
+}
+
 static void ehci_arm_interrupt(ehci_hid_t *hid) {
     ehci_fill_qtd(hid->qtd, 1, 1, PID_IN, hid->toggle, hid->len, hid->buf, 1);
     hid->qh->current_qtd = 0;
