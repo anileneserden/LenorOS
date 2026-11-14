@@ -482,21 +482,54 @@ void wm_draw_window(window_t* win) {
                     gfx_fill_rect(abs_x + iw - inp->border_thickness, abs_y, inp->border_thickness, ih, inp->border_color); // Sağ
                 }
 
-                // Metin veya Placeholder çizimi
+                // Metin veya Placeholder çizimi (Çok satırlı destekli)
                 if (inp->text[0] != '\0') {
-                    gfx_draw_text_utf8(abs_x + 6, abs_y + 6, inp->text_color, inp->text);
+                    int current_y = abs_y + 6;
+                    int line_height = 16; // Her satır arasındaki piksel mesafesi
+                    char line_buf[128];
+                    int l_idx = 0;
+
+                    for (int k = 0; inp->text[k] != '\0'; k++) {
+                        if (inp->text[k] == '\n') {
+                            line_buf[l_idx] = '\0';
+                            gfx_draw_text_utf8(abs_x + 6, current_y, inp->text_color, line_buf);
+                            current_y += line_height;
+                            l_idx = 0;
+                        } else {
+                            if (l_idx < 127) {
+                                line_buf[l_idx++] = inp->text[k];
+                            }
+                        }
+                    }
+                    // Son satırı çiz
+                    line_buf[l_idx] = '\0';
+                    gfx_draw_text_utf8(abs_x + 6, current_y, inp->text_color, line_buf);
+
                 } else if (inp->placeholder[0] != '\0') {
                     gfx_draw_text_utf8(abs_x + 6, abs_y + 6, inp->placeholder_color, inp->placeholder);
                 }
 
-                // Eğer bu kutu şu an odaktaysa (active_input ise) sonuna imleç çizgisi (|) koy
+                // Eğer bu kutu şu an odaktaysa (active_input ise) imleç çizgisi (|) çiz
                 if (active_input == inp) {
-                    // Metin uzunluğuna göre imlecin X koordinatını kaba taslak hesaplayabiliriz (her karakter ortalama 8 piksel)
-                    int text_len = 0;
-                    while(inp->text[text_len] != '\0') text_len++;
-                    int cursor_pos_x = abs_x + 6 + (text_len * 8);
-                    if (cursor_pos_x < abs_x + iw - 8) {
-                        gfx_fill_rect(cursor_pos_x, abs_y + 6, 2, ih - 12, inp->text_color);
+                    // Metindeki satır sayısını ve son satırdaki karakter sayısını bul
+                    int last_line_len = 0;
+                    int line_count = 0;
+                    
+                    for (int k = 0; inp->text[k] != '\0'; k++) {
+                        if (inp->text[k] == '\n') {
+                            line_count++;
+                            last_line_len = 0; // Yeni satıra geçildi
+                        } else {
+                            last_line_len++;
+                        }
+                    }
+
+                    int line_height = 16;
+                    int cursor_pos_x = abs_x + 6 + (last_line_len * 8); // Her karakter ~8 piksel
+                    int cursor_pos_y = abs_y + 6 + (line_count * line_height);
+
+                    if (cursor_pos_x < abs_x + iw - 8 && cursor_pos_y < abs_y + ih - 16) {
+                        gfx_fill_rect(cursor_pos_x, cursor_pos_y, 2, line_height, inp->text_color);
                     }
                 }
             }
@@ -799,6 +832,27 @@ static void wm_update_cursor(void) {
 void wm_process_input(void) {
     wm_update_hover_state();
     wm_update_cursor();
+
+    // --- KLAVYE ENTER (0x1C) KONTROLÜ ---
+    uint8_t scancode = keyboard_get_last_scancode();
+    if (scancode == 0x1C) { // Enter Tuşu
+        if (active_input) {
+            int len = 0;
+            while (active_input->text[len] != '\0') len++;
+
+            // Buffer sınırları içinde yeni satır (\n) karakteri ekle
+            if (len < 126) {
+                active_input->text[len] = '\n';
+                active_input->text[len + 1] = '\0';
+
+                // Ekranı tazele ve yeniden çiz
+                damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+                desktop_redraw();
+            }
+        }
+        keyboard_clear_last_scancode(); // Tuşun tekrar tetiklenmesini önle
+    }
+    // ----------------------------------
 
     uint8_t left_pressed = mouse_buttons & 0x01;
     uint8_t prev_left = prev_buttons & 0x01;

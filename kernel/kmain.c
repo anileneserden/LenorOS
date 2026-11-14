@@ -120,10 +120,10 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     app_manager_init();
     fb_swap();
 
-    if (lex2_load_and_run("C:/Program Files/html-parser/html-parser.lex")) {
-        serial_write("html-parser uygulamasi basariyla calistirildi!\n");
+    if (lex2_load_and_run("C:/Program Files/notepad/notepad.lex")) {
+        serial_write("notepad uygulamasi basariyla calistirildi!\n");
     } else {
-        serial_write("HATA: html-parser uygulamasi yuklenemedi!\n");
+        serial_write("HATA: notepad uygulamasi yuklenemedi!\n");
     }
 
     // 6. AC97 audio driver initialization
