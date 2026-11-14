@@ -374,6 +374,60 @@ static bool starts_with(const char* str, const char* prefix) {
     return true;
 }
 
+// style="..." özniteliğinden renk değerini (#RRGGBB formatında) parse eder
+static uint32_t parse_inline_style(const char* tag_str, uint32_t default_color) {
+    const char* s = tag_str;
+    // "style=" ifadesini ara
+    while (*s) {
+        if ((s[0] == 's' || s[0] == 'S') &&
+            (s[1] == 't' || s[1] == 'T') &&
+            (s[2] == 'y' || s[2] == 'Y') &&
+            (s[3] == 'l' || s[3] == 'L') &&
+            (s[4] == 'e' || s[4] == 'E') &&
+            s[5] == '=') {
+            
+            s += 6;
+            if (*s == '"' || *s == '\'') s++; // Tırnağı atla
+
+            // "color:" anahtar kelimesini ara
+            while (*s && *s != '"' && *s != '\'' && *s != '>') {
+                if ((s[0] == 'c' || s[0] == 'C') &&
+                    (s[1] == 'o' || s[1] == 'O') &&
+                    (s[2] == 'l' || s[2] == 'L') &&
+                    (s[3] == 'o' || s[3] == 'O') &&
+                    (s[4] == 'r' || s[4] == 'R') &&
+                    s[5] == ':') {
+                    
+                    s += 6;
+                    while (*s == ' ') s++; // Boşlukları atla
+
+                    // Eğer # işareti ile başlıyorsa (örn: #FF0000)
+                    if (*s == '#') {
+                        s++;
+                        uint32_t rgb = 0;
+                        for (int i = 0; i < 6; i++) {
+                            char c = s[i];
+                            uint32_t val = 0;
+                            if (c >= '0' && c <= '9') val = c - '0';
+                            else if (c >= 'a' && c <= 'f') val = c - 'a' + 10;
+                            else if (c >= 'A' && c <= 'F') val = c - 'A' + 10;
+                            else break;
+                            rgb = (rgb << 4) | val;
+                        }
+                        // Tam opak ARGB formatına çevir (0xFF + RRGGBB)
+                        return 0xFF000000 | rgb;
+                    }
+                    break;
+                }
+                s++;
+            }
+            break;
+        }
+        s++;
+    }
+    return default_color;
+}
+
 // Aktif penceredeki browser bileşenine HTML içeriği yükler ve parse eder
 void lex_browser_load_html(const char* html) {
     window_t* win = wm_get_active_window();
@@ -529,9 +583,16 @@ void lex_browser_load_html(const char* html) {
                 if (starts_with(ptr, "</h1>") || starts_with(ptr, "</H1>")) ptr += 5;
                 continue;
             }
-            // <p>
-            else if (starts_with(ptr, "<p>") || starts_with(ptr, "<P>")) {
-                ptr += 3;
+            // <p> veya <p style="...">
+            else if (starts_with(ptr, "<p>") || starts_with(ptr, "<P>") || starts_with(ptr, "<p ") || starts_with(ptr, "<P ")) {
+                // Etiketin kapanışına (>) kadar olan kısmı incelemek için bir pointer tutalım
+                const char* tag_start = ptr;
+                while (*ptr && *ptr != '>') ptr++;
+                if (*ptr == '>') ptr++; // '>' karakterini geç
+
+                // Inline style rengini kontrol et (varsayılan metin rengi kullanılır)
+                uint32_t text_color = parse_inline_style(tag_start, current_text_color);
+
                 char buf[128];
                 int i = 0;
                 while (*ptr && !starts_with(ptr, "</p>") && !starts_with(ptr, "</P>") && i < 127) {
@@ -541,7 +602,7 @@ void lex_browser_load_html(const char* html) {
                 
                 if (win->label_count < MAX_LABELS) {
                     label_item_t* l = &win->labels[win->label_count++];
-                    l->x = 30; l->y = current_y; l->color = current_text_color; l->anchor = ANCHOR_LEFT;
+                    l->x = 30; l->y = current_y; l->color = text_color; l->anchor = ANCHOR_LEFT; // Dinamik renk!
                     l->init_x = 30; l->init_y = current_y;
                     l->init_win_w = win->width; l->init_win_h = win->height;
                     strcpy(l->text, buf);
