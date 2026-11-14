@@ -402,7 +402,7 @@ void desktop_init(void) {
     wm_init();
 
     // Test amaçlı 3 sekmeli tarayıcı penceresi oluştur
-    wm_create_window(500, 350, "Lenor Tarayıcı", 3);
+    //wm_create_window(500, 350, "Lenor Tarayıcı", 3);
 
     // 3. Ekranı ilk kez çizime hazırla ve tetikle
     damage_union_rect(0, 0, width, height);
@@ -421,6 +421,30 @@ void desktop_process_input(void) {
         desktop_redraw();
 
         keyboard_clear_last_scancode(); // Tuşun tekrar tetiklenmesini önle
+    }
+    // --- TEST: 1 TUŞU -> NORMAL OK İMLECİ (CURSOR_ARROW) ---
+    else if (scancode == 0x02) { 
+        cursor_set_type(CURSOR_ARROW);
+        serial_write("[TEST] 1 tusuna basildi -> CURSOR_ARROW zorlandi.\n");
+
+        int screen_w = fb_get_width();
+        int screen_h = fb_get_height();
+        damage_union_rect(0, 0, screen_w, screen_h);
+        desktop_redraw();
+
+        keyboard_clear_last_scancode();
+    }
+    // --- TEST: 2 TUŞU -> EL İMLECİ (CURSOR_HAND) ---
+    else if (scancode == 0x03) { 
+        cursor_set_type(CURSOR_HAND);
+        serial_write("[TEST] 2 tusuna basildi -> CURSOR_HAND zorlandi.\n");
+
+        int screen_w = fb_get_width();
+        int screen_h = fb_get_height();
+        damage_union_rect(0, 0, screen_w, screen_h);
+        desktop_redraw();
+
+        keyboard_clear_last_scancode();
     }
 
     // 1. Get the previous cursor position (if the cursor module stores it)
@@ -528,15 +552,34 @@ void desktop_process_input(void) {
                 { "New File", menu_action_new_file }
             };
             menu_show(new_x, new_y, desktop_items, 2, NULL);
+// 5. If the cursor moved or actions occurred, mark relevant areas as damaged
+    if (old_x != new_x || old_y != new_y || scancode != 0) {
+        damage_union_rect(old_x, old_y, cursor_w, cursor_h);
+        damage_union_rect(new_x, new_y, cursor_w, cursor_h);
+        
+        if (menu_is_open()) {
+            damage_union_rect(new_x - 20, new_y - 20, 180, 120); 
+        }
 
+        damage_union_rect(10, 10, 240, 92);
+
+        desktop_redraw();
+    }
             damage_union_rect(0, 0, screen_w, screen_h);
             desktop_redraw();
         }
     }
     prev_mouse_right = current_mouse_right;
 
-    // 5. If the cursor moved or actions occurred, mark relevant areas as damaged
-    if (old_x != new_x || old_y != new_y || scancode != 0) {
+    // Önceki imleç türünü takip etmek için static bir değişken
+    static cursor_type_t last_cursor_type = CURSOR_ARROW;
+    cursor_type_t current_cursor_type = cursor_get_type();
+
+    bool cursor_type_changed = (current_cursor_type != last_cursor_type);
+    last_cursor_type = current_cursor_type;
+
+    // 5. If the cursor moved, cursor type changed, or actions occurred, mark relevant areas as damaged
+    if (old_x != new_x || old_y != new_y || cursor_type_changed || scancode != 0) {
         damage_union_rect(old_x, old_y, cursor_w, cursor_h);
         damage_union_rect(new_x, new_y, cursor_w, cursor_h);
         

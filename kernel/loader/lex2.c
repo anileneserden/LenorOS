@@ -13,6 +13,11 @@
 
 #define WM_TITLEBAR_HEIGHT 24
 
+#define ANCHOR_LEFT   (1 << 0)
+#define ANCHOR_RIGHT  (1 << 1)
+#define ANCHOR_TOP    (1 << 2)
+#define ANCHOR_BOTTOM (1 << 3)
+
 // Aktif LEX dosyasını ve kaynak tablosunu bellekte tutmak için global değişkenler
 static uint8_t* current_lex_file_buffer = 0;
 static uint32_t current_lex_file_size = 0;
@@ -21,7 +26,8 @@ static void lex_print(const char* str) {
     serial_write(str);
 }
 
-static int lex_window_create(const char* title, int width, int height) {
+static int lex_window_create(const char* title, int width, int height, bool resizable) {
+    (void)resizable;
     window_t* window = wm_create_window(width, height, title);
     return window != 0;
 }
@@ -165,7 +171,8 @@ static uint8_t* lex_find_resource_in_memory(const char* target_filename, uint32_
     return 0;
 }
 
-static int lex_picturebox_create(int x, int y, int w, int h, const char* img_path, uint8_t anchor) {
+static int lex_picturebox_create(int x, int y, int w, int h, const char* img_path, uint8_t anchor, int size_mode) {
+    (void)size_mode;
     window_t* win = wm_get_active_window();
     if (!win) return -1;
     if (win->picturebox_count >= MAX_PICTUREBOXES) return -1;
@@ -186,44 +193,21 @@ static int lex_picturebox_create(int x, int y, int w, int h, const char* img_pat
     uint8_t* img_raw_data = 0;
     uint32_t img_data_size = 0;
 
-    // GÜVENLİ YOL KONTROLÜ: Eğer yol "C:/" ile başlıyorsa doğrudan diskten (VFS) oku!
     if (img_path[0] == 'C' && img_path[1] == ':' && (img_path[2] == '/' || img_path[2] == '\\')) {
-        serial_write("[LEX] Picturebox resmi VFS disk üzerinden okunuyor: ");
-        serial_write(img_path);
-        serial_write("\n");
-
         img_raw_data = (uint8_t*)vfs_read_file(img_path, &img_data_size);
-        if (!img_raw_data || img_data_size == 0) {
-            serial_write("[LEX ERROR] VFS üzerinden resim dosyası okunamadı: ");
-            serial_write(img_path);
-            serial_write("\n");
-            return -1;
-        }
+        if (!img_raw_data || img_data_size == 0) return -1;
     } else {
-        // Eski yöntem: LEX paketinin içindeki kaynaklardan bul
         img_raw_data = lex_find_resource_in_memory(img_path, &img_data_size);
-        if (!img_raw_data || img_data_size == 0) {
-            serial_write("[LEX ERROR] Picturebox resmi LEX paketinde bulunamadı: ");
-            serial_write(img_path);
-            serial_write("\n");
-            return -1;
-        }
+        if (!img_raw_data || img_data_size == 0) return -1;
     }
 
-    // Ham PNG verisini bellekten decode et
     png_image_t* img = png_load_from_memory(img_raw_data, img_data_size);
-    
-    // Eğer veriyi VFS'den (diskten) okuduysak dinamik belleği işimiz bitince serbest bırakmalıyız
     if (img_path[0] == 'C' && img_raw_data) {
         kfree(img_raw_data);
     }
 
-    if (!img) {
-        serial_write("[LEX ERROR] PNG bellekten decode edilemedi!\n");
-        return -1;
-    }
+    if (!img) return -1;
 
-    // Çözülen pikselleri ve boyutları picturebox yapısına aktar
     p->img_width = img->width;
     p->img_height = img->height;
     
@@ -234,7 +218,6 @@ static int lex_picturebox_create(int x, int y, int w, int h, const char* img_pat
     }
 
     png_free_image(img);
-
     wm_draw_window(win);
     return 1;
 }
@@ -243,7 +226,8 @@ static int lex_input_create(int x, int y, int w, int h,
                             const char* text, const char* placeholdertext, 
                             uint32_t backcolor, uint32_t color, 
                             uint32_t placeholder_color, uint32_t border_color, 
-                            int border_thickness, uint8_t anchor) {
+                            int border_thickness, void (*on_key)(char c), uint8_t anchor) {
+    (void)on_key;
     window_t* win = wm_get_active_window();
     if (!win) return -1;
     if (win->input_count >= MAX_INPUTS) return -1;
@@ -313,7 +297,7 @@ static int lex_combobox_create(int x, int y, int w, int h, const char** items, i
     return 1;
 }
 
-static int lex_get_directory_files(const char* full_path, void* out_list, int max_count) {
+static int lex_get_directory_files(const char* full_path, vfs_file_info_t* out_list, int max_count) {
     return vfs_get_directory_files(full_path, out_list, max_count);
 }
 
@@ -363,6 +347,239 @@ static void lex_canvas_update_buffer(int canvas_id) {
 static void lex_reboot_system(void) { system_reboot(); }
 static void lex_shutdown_system(void) { system_shutdown(); }
 static bool lex_is_key_pressed(int key_code) { return keyboard_is_key_pressed(key_code); }
+
+// Aktif pencereye bir browser bileşeni ekler
+int lex_browser_create(int x, int y, int w, int h, uint8_t anchor) {
+    window_t* win = wm_get_active_window();
+    if (!win) return -1;
+
+    // Eğer pencere yapında browser için özel bir alan tutuyorsan (örneğin has_browser, browser_x vb.)
+    // burada set edebilirsin. Ya da özel bir panel/canvas gibi yönetebilirsin.
+    win->has_canvas = true; // Şimdilik entegrasyon için canvas mantığını veya özel bayrağı kullanabiliriz
+    win->canvas_x = x;
+    win->canvas_y = y;
+    win->canvas_w = w;
+    win->canvas_h = h;
+    win->canvas_anchor = anchor;
+
+    // Eğer ayrı bir browser struct yapısı tutuyorsan buraya ekleyebilirsin.
+    serial_write("LEX API: browser_create çağrıldı\n");
+    return 0; // Başarılı ID
+}
+
+static bool starts_with(const char* str, const char* prefix) {
+    while (*prefix) {
+        if (*str++ != *prefix++) return false;
+    }
+    return true;
+}
+
+// Aktif penceredeki browser bileşenine HTML içeriği yükler ve parse eder
+void lex_browser_load_html(const char* html) {
+    window_t* win = wm_get_active_window();
+    if (!win || !html) return;
+
+    serial_write("LEX API: browser_load_html çağrıldı. HTML parse ediliyor...\n");
+
+    // Yeni sayfaya geçilirken önceki sayfanın linklerini ve etiketlerini sıfırla
+    win->link_count = 0;
+    win->label_count = 0;
+
+    int current_y = 60;
+    const char* ptr = html;
+    bool inside_body = false;
+    int safety_counter = 0;
+    int col_index = 0;
+    uint32_t current_text_color = 0xFFCCCCCC; // Varsayılan metin rengi
+
+    while (*ptr != '\0' && current_y < 500 && safety_counter < 10000) {
+        safety_counter++;
+        
+        // <body> kontrolü
+        if (starts_with(ptr, "<body>") || starts_with(ptr, "<BODY>")) {
+            inside_body = true;
+            ptr += 6;
+            continue;
+        }
+        else if (starts_with(ptr, "</body>") || starts_with(ptr, "</BODY>")) {
+            inside_body = false;
+            ptr += 7;
+            continue;
+        }
+
+        if (inside_body) {
+            // <br> veya <br/>
+            if (starts_with(ptr, "<br>") || starts_with(ptr, "<br/>") || starts_with(ptr, "<BR>")) {
+                ptr += (starts_with(ptr, "<br/>") ? 5 : 4);
+                current_y += 20;
+                continue;
+            }
+            // <table>
+            else if (starts_with(ptr, "<table>") || starts_with(ptr, "<TABLE>")) {
+                ptr += 7;
+                current_y += 10;
+                continue;
+            }
+            // </table>
+            else if (starts_with(ptr, "</table>") || starts_with(ptr, "</TABLE>")) {
+                ptr += 8;
+                current_y += 15;
+                continue;
+            }
+            // <tr>
+            else if (starts_with(ptr, "<tr>") || starts_with(ptr, "<TR>")) {
+                ptr += 4;
+                current_y += 25;
+                col_index = 0;
+                continue;
+            }
+            // </tr>
+            else if (starts_with(ptr, "</tr>") || starts_with(ptr, "</TR>")) {
+                ptr += 5;
+                continue;
+            }
+            // <td>
+            else if (starts_with(ptr, "<td>") || starts_with(ptr, "<TD>")) {
+                ptr += 4;
+                char cell_buf[64];
+                int i = 0;
+                while (*ptr && !starts_with(ptr, "</td>") && !starts_with(ptr, "</TD>") && i < 63) {
+                    cell_buf[i++] = *ptr++;
+                }
+                cell_buf[i] = '\0';
+                
+                int cell_x = 30 + (col_index * 140);
+                
+                if (win->label_count < MAX_LABELS) {
+                    label_item_t* l = &win->labels[win->label_count++];
+                    l->x = cell_x; l->y = current_y; l->color = current_text_color; l->anchor = ANCHOR_LEFT;
+                    l->init_x = cell_x; l->init_y = current_y;
+                    l->init_win_w = win->width; l->init_win_h = win->height;
+                    strcpy(l->text, cell_buf);
+                }
+                col_index++;
+                
+                if (starts_with(ptr, "</td>") || starts_with(ptr, "</TD>")) ptr += 5;
+                continue;
+            }
+            // Bağlantı Etiketi: <a href="...">Metin</a>
+            else if (starts_with(ptr, "<a href=\"") || starts_with(ptr, "<A HREF=\"")) {
+                ptr += 9;
+                char href_buf[128];
+                int i = 0;
+                while (*ptr && *ptr != '"' && i < 127) {
+                    href_buf[i++] = *ptr++;
+                }
+                href_buf[i] = '\0';
+                
+                if (*ptr == '"') ptr++; 
+                if (*ptr == '>') ptr++; 
+
+                char text_buf[64];
+                i = 0;
+                while (*ptr && !starts_with(ptr, "</a>") && !starts_with(ptr, "</A>") && i < 63) {
+                    text_buf[i++] = *ptr++;
+                }
+                text_buf[i] = '\0';
+
+                int link_x = 30;
+                
+                // Mavi renkli link metnini etiket olarak ekle
+                if (win->label_count < MAX_LABELS) {
+                    label_item_t* l = &win->labels[win->label_count++];
+                    l->x = link_x; l->y = current_y; l->color = 0xFF007ACC; l->anchor = ANCHOR_LEFT;
+                    l->init_x = link_x; l->init_y = current_y;
+                    l->init_win_w = win->width; l->init_win_h = win->height;
+                    strcpy(l->text, text_buf);
+                }
+
+                // Pencere yöneticisinin el imleci (hand cursor) algılaması için linki kaydet
+                if (win->link_count < MAX_LINKS) {
+                    browser_link_t* lnk = &win->links[win->link_count++];
+                    lnk->x = link_x;
+                    lnk->y = current_y;
+                    lnk->width = i * 8;
+                    lnk->height = 18;
+                    strcpy(lnk->href, href_buf);
+                    strcpy(lnk->text, text_buf);
+                }
+
+                current_y += 25;
+                if (starts_with(ptr, "</a>") || starts_with(ptr, "</A>")) ptr += 4;
+                continue;
+            }
+            // <h1>
+            else if (starts_with(ptr, "<h1>") || starts_with(ptr, "<H1>")) {
+                ptr += 4;
+                char buf[64];
+                int i = 0;
+                while (*ptr && !starts_with(ptr, "</h1>") && !starts_with(ptr, "</H1>") && i < 63) {
+                    buf[i++] = *ptr++;
+                }
+                buf[i] = '\0';
+                
+                if (win->label_count < MAX_LABELS) {
+                    label_item_t* l = &win->labels[win->label_count++];
+                    l->x = 30; l->y = current_y; l->color = current_text_color; l->anchor = ANCHOR_LEFT;
+                    l->init_x = 30; l->init_y = current_y;
+                    l->init_win_w = win->width; l->init_win_h = win->height;
+                    strcpy(l->text, buf);
+                }
+                current_y += 35;
+                if (starts_with(ptr, "</h1>") || starts_with(ptr, "</H1>")) ptr += 5;
+                continue;
+            }
+            // <p>
+            else if (starts_with(ptr, "<p>") || starts_with(ptr, "<P>")) {
+                ptr += 3;
+                char buf[128];
+                int i = 0;
+                while (*ptr && !starts_with(ptr, "</p>") && !starts_with(ptr, "</P>") && i < 127) {
+                    buf[i++] = *ptr++;
+                }
+                buf[i] = '\0';
+                
+                if (win->label_count < MAX_LABELS) {
+                    label_item_t* l = &win->labels[win->label_count++];
+                    l->x = 30; l->y = current_y; l->color = current_text_color; l->anchor = ANCHOR_LEFT;
+                    l->init_x = 30; l->init_y = current_y;
+                    l->init_win_w = win->width; l->init_win_h = win->height;
+                    strcpy(l->text, buf);
+                }
+                current_y += 25;
+                if (starts_with(ptr, "</p>") || starts_with(ptr, "</P>")) ptr += 4;
+                continue;
+            }
+            // Ham Metinler (Raw Text)
+            else if (*ptr != '<' && *ptr != '\n' && *ptr != '\r' && *ptr != ' ' && *ptr != '\t') {
+                char text_buf[128];
+                int i = 0;
+                while (*ptr && *ptr != '<' && *ptr != '\n' && *ptr != '\r' && i < 127) {
+                    text_buf[i++] = *ptr++;
+                }
+                text_buf[i] = '\0';
+                
+                if (i > 0) {
+                    if (win->label_count < MAX_LABELS) {
+                        label_item_t* l = &win->labels[win->label_count++];
+                        l->x = 30; l->y = current_y; l->color = current_text_color; l->anchor = ANCHOR_LEFT;
+                        l->init_x = 30; l->init_y = current_y;
+                        l->init_win_w = win->width; l->init_win_h = win->height;
+                        strcpy(l->text, text_buf);
+                    }
+                    current_y += 22;
+                }
+                continue;
+            }
+        }
+        ptr++;
+    }
+
+    // Ekranı tazele
+    damage_union_rect(win->x, win->y, win->width, win->height);
+    wm_draw_window(win);
+    desktop_redraw();
+}
 
 static void lex_set_tab_icon_from_memory(const void* ico_data, uint32_t ico_size) {
     window_t* win = wm_get_active_window();
@@ -429,6 +646,8 @@ static void lex_install_api(void) {
     api->reboot_system = lex_reboot_system;
     api->shutdown_system = lex_shutdown_system;
     api->is_key_pressed = lex_is_key_pressed;
+    api->browser_create = lex_browser_create;
+    api->browser_load_html = lex_browser_load_html;
     api->set_tab_icon_from_memory = lex_set_tab_icon_from_memory;
 }
 

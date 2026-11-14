@@ -9,12 +9,26 @@
 static int32_t old_mouse_x = 400;
 static int32_t old_mouse_y = 300;
 
-// Özel PNG imleci için değişkenler
+// Aktif imleç türü
+static cursor_type_t current_cursor_type = CURSOR_ARROW;
+
+// Farklı imleçler için pikseller, boyutlar ve hotspot değerleri
+static uint32_t* arrow_cursor_pixels = NULL;
+static int arrow_w = 0, arrow_h = 0;
+static int arrow_hotspot_x = 0, arrow_hotspot_y = 0;
+
+static uint32_t* hand_cursor_pixels = NULL;
+static int hand_w = 0, hand_h = 0;
+static int hand_hotspot_x = 0, hand_hotspot_y = 0;
+
+static uint32_t* ibeam_cursor_pixels = NULL;
+static int ibeam_w = 0, ibeam_h = 0;
+static int ibeam_hotspot_x = 0, ibeam_hotspot_y = 0;
+
+// Aktif imleç için işaretçiler
 static uint32_t* custom_cursor_pixels = NULL;
 static int cursor_img_width = 0;
 static int cursor_img_height = 0;
-
-// Otomatik tespit edilecek dinamik hotspot değişkenleri
 static int hotspot_x = 0;
 static int hotspot_y = 0;
 
@@ -34,28 +48,23 @@ static inline int get_draw_height(void) {
     return (custom_cursor_pixels && cursor_img_height > 0) ? cursor_img_height : CURSOR_HEIGHT;
 }
 
-void cursor_init(void) {
-    old_mouse_x = mouse_x;
-    old_mouse_y = mouse_y;
-    cursor_visible = false;
-    
-    png_image_t* cursor_png = png_load_from_file("C:/Lenor/Cursors/arrow.png");
+// Belirtilen PNG'yi yükleyip otomatik hotspot hesaplayan yardımcı fonksiyon
+static void load_cursor_png(const char* path, uint32_t** out_pixels, int* out_w, int* out_h, int* out_hx, int* out_hy) {
+    png_image_t* cursor_png = png_load_from_file(path);
     if (cursor_png) {
-        custom_cursor_pixels = cursor_png->pixels;
-        cursor_img_width = cursor_png->width;
-        cursor_img_height = cursor_png->height;
+        *out_pixels = cursor_png->pixels;
+        *out_w = cursor_png->width;
+        *out_h = cursor_png->height;
 
-        // --- OTOMATİK HOTSPOT TESPİTİ (İLK GÖRÜNÜR PİKSELİ BUL) ---
         bool found = false;
-        for (int y = 0; y < cursor_img_height; y++) {
-            for (int x = 0; x < cursor_img_width; x++) {
-                uint32_t pixel = custom_cursor_pixels[y * cursor_img_width + x];
+        for (int y = 0; y < *out_h; y++) {
+            for (int x = 0; x < *out_w; x++) {
+                uint32_t pixel = (*out_pixels)[y * (*out_w) + x];
                 uint8_t alpha = (pixel >> 24) & 0xFF; // RGBA Alpha kanalı
                 
-                // Şeffaf olmayan (görünür) ilk pikseli bulduğumuzda dur
                 if (alpha > 10) { 
-                    hotspot_x = x;
-                    hotspot_y = y;
+                    *out_hx = x;
+                    *out_hy = y;
                     found = true;
                     break;
                 }
@@ -64,12 +73,42 @@ void cursor_init(void) {
         }
 
         free(cursor_png);
-        serial_write("CURSOR: C:/Lenor/Cursors/arrow.png basariyla yuklendi ve otomatik hotspot hesaplandi!\n");
+        
+        // --- BAŞARI LOGU ---
+        serial_write("[CURSOR] Yuklendi: ");
+        serial_write(path);
+        serial_write("\n");
     } else {
-        serial_write("CURSOR: C:/Lenor/Cursors/arrow.png bulunamadi, varsayilan imlec kullanilacak.\n");
-        hotspot_x = 0;
-        hotspot_y = 0;
+        *out_pixels = NULL;
+        *out_w = 0;
+        *out_h = 0;
+        *out_hx = 0;
+        *out_hy = 0;
+
+        // --- HATA LOGU ---
+        serial_write("[CURSOR ERROR] Bulunamadi veya decode edilemedi: ");
+        serial_write(path);
+        serial_write("\n");
     }
+}
+
+void cursor_init(void) {
+    old_mouse_x = mouse_x;
+    old_mouse_y = mouse_y;
+    cursor_visible = false;
+    
+    // Tüm imleç türlerini yükle
+    load_cursor_png("C:/Lenor/Cursors/arrow.png", &arrow_cursor_pixels, &arrow_w, &arrow_h, &arrow_hotspot_x, &arrow_hotspot_y);
+    load_cursor_png("C:/Lenor/Cursors/hand.png", &hand_cursor_pixels, &hand_w, &hand_h, &hand_hotspot_x, &hand_hotspot_y);
+    load_cursor_png("C:/Lenor/Cursors/ibeam.png", &ibeam_cursor_pixels, &ibeam_w, &ibeam_h, &ibeam_hotspot_x, &ibeam_hotspot_y);
+
+    // Varsayılan olarak arrow ile başla
+    custom_cursor_pixels = arrow_cursor_pixels;
+    cursor_img_width = arrow_w;
+    cursor_img_height = arrow_h;
+    hotspot_x = arrow_hotspot_x;
+    hotspot_y = arrow_hotspot_y;
+    current_cursor_type = CURSOR_ARROW;
 
     int draw_w = get_draw_width();
     int draw_h = get_draw_height();
@@ -97,6 +136,50 @@ void cursor_init(void) {
             }
         }
     }
+}
+
+void cursor_set_type(cursor_type_t type) {
+    if (current_cursor_type == type) return;
+
+    cursor_hide();
+
+    current_cursor_type = type;
+
+    if (type == CURSOR_HAND && hand_cursor_pixels) {
+        custom_cursor_pixels = hand_cursor_pixels;
+        cursor_img_width = hand_w;
+        cursor_img_height = hand_h;
+        hotspot_x = hand_hotspot_x;
+        hotspot_y = hand_hotspot_y;
+    } else if (type == CURSOR_IBEAM && ibeam_cursor_pixels) {
+        custom_cursor_pixels = ibeam_cursor_pixels;
+        cursor_img_width = ibeam_w;
+        cursor_img_height = ibeam_h;
+        hotspot_x = ibeam_hotspot_x;
+        hotspot_y = ibeam_hotspot_y;
+    } else {
+        custom_cursor_pixels = arrow_cursor_pixels;
+        cursor_img_width = arrow_w;
+        cursor_img_height = arrow_h;
+        hotspot_x = arrow_hotspot_x;
+        hotspot_y = arrow_hotspot_y;
+    }
+
+    int draw_w = get_draw_width();
+    int draw_h = get_draw_height();
+
+    if (cursor_bg_buffer) {
+        free(cursor_bg_buffer);
+    }
+    cursor_bg_buffer = malloc(draw_w * draw_h * sizeof(uint32_t));
+    bg_buffer_width = draw_w;
+    bg_buffer_height = draw_h;
+
+    cursor_show();
+}
+
+cursor_type_t cursor_get_type(void) {
+    return current_cursor_type;
 }
 
 void cursor_get_position(int32_t* x, int32_t* y) {

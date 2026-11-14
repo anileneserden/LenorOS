@@ -312,6 +312,25 @@ void wm_draw_window(window_t* win) {
         }
     }
 
+    // --- BURAYA EKLENECEK: 6.5. Draw browser link underlines (<a> etiketleri için alt çizgi) ---
+    for (int i = 0; i < win->link_count; i++) {
+        browser_link_t* lnk = &win->links[i];
+        int rel_x = lnk->x;
+        int rel_y = 24 + lnk->y + 16; // Metin yüksekliğinin hemen altı
+        int lw = lnk->width;
+
+        // Kırpma (Clipping) ve sınır kontrolleri
+        if (rel_x >= 0 && rel_x < win->width && rel_y >= 24 && rel_y < win->height) {
+            if (rel_x + lw > win->width) {
+                lw = win->width - rel_x;
+            }
+            if (lw > 0) {
+                // Mavi alt çizgi (0xFF007ACC)
+                gfx_fill_rect(win->x + rel_x, win->y + rel_y, lw, 1, 0xFF007ACC);
+            }
+        }
+    }
+
     // 7. Draw buttons (with advanced clipping support)
     for (int i = 0; i < win->button_count; i++) {
         button_t* b = &win->buttons[i];
@@ -718,8 +737,68 @@ static void wm_update_hover_state(void) {
     }
 }
 
+static void wm_update_cursor(void) {
+    window_t* win = wm_get_active_window();
+    if (!win || win->width == 0) {
+        cursor_set_type(CURSOR_ARROW);
+        return;
+    }
+
+    cursor_type_t new_cursor = CURSOR_ARROW;
+
+    // 1. Text Input alanlarını kontrol et (I-Beam / Metin İmleci)
+    for (int i = 0; i < win->input_count; i++) {
+        text_input_t* inp = &win->inputs[i];
+        int abs_x = win->x + inp->x;
+        int abs_y = win->y + 24 + inp->y;
+
+        if (mouse_x >= abs_x && mouse_x < abs_x + inp->width &&
+            mouse_y >= abs_y && mouse_y < abs_y + inp->height) {
+            new_cursor = CURSOR_IBEAM;
+            break;
+        }
+    }
+
+    // 2. Input üzerinde değilse butonları kontrol et (Hand / El İmleci)
+    if (new_cursor == CURSOR_ARROW) {
+        for (int i = 0; i < win->button_count; i++) {
+            button_t* btn = &win->buttons[i];
+            int abs_x = win->x + btn->x;
+            int abs_y = win->y + 24 + btn->y;
+
+            if (mouse_x >= abs_x && mouse_x < abs_x + btn->width &&
+                mouse_y >= abs_y && mouse_y < abs_y + btn->height) {
+                new_cursor = CURSOR_HAND;
+                break;
+            }
+        }
+    }
+
+    // 3. Tarayıcı linklerini (<a> etiketleri) kontrol et (Hand / El İmleci)
+    if (new_cursor == CURSOR_ARROW) {
+        for (int i = 0; i < win->link_count; i++) {
+            browser_link_t* lnk = &win->links[i];
+            
+            int abs_x = win->x + lnk->x;
+            int abs_y = win->y + 24 + lnk->y;
+            int abs_w = lnk->width;
+            int abs_h = lnk->height > 0 ? lnk->height : 18;
+
+            if (mouse_x >= abs_x && mouse_x < abs_x + abs_w &&
+                mouse_y >= abs_y && mouse_y < abs_y + abs_h) {
+                new_cursor = CURSOR_HAND;
+                break;
+            }
+        }
+    }
+
+    // İmleç türünü sistem genelinde güncelle
+    cursor_set_type(new_cursor);
+}
+
 void wm_process_input(void) {
     wm_update_hover_state();
+    wm_update_cursor();
 
     uint8_t left_pressed = mouse_buttons & 0x01;
     uint8_t prev_left = prev_buttons & 0x01;

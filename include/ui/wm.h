@@ -3,15 +3,17 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <ui/cursor.h>
 
 #define MAX_WINDOWS  10
 #define MAX_PANELS   16
-#define MAX_LABELS   32
-#define MAX_BUTTONS  24
+#define MAX_LABELS   256
+#define MAX_BUTTONS  64
 #define MAX_INPUTS   8
 #define MAX_COMBOBOXES 8
 #define MAX_PICTUREBOXES 8
 #define MAX_TABS     5
+#define MAX_LINKS    32
 
 typedef struct {
     int x, y;
@@ -103,6 +105,12 @@ typedef struct {
 } browser_tab_t;
 
 typedef struct {
+    int x, y, width, height;
+    char href[128];
+    char text[64];
+} browser_link_t;
+
+typedef struct {
     int x, y;
     int width, height;
     
@@ -143,6 +151,9 @@ typedef struct {
     int active_tab_index;
     browser_tab_t tabs[MAX_TABS];
     int tab_count;
+
+    browser_link_t links[MAX_LINKS];
+    int link_count;
 
     bool has_canvas;
     int canvas_x, canvas_y;
