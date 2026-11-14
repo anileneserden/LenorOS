@@ -47,6 +47,10 @@ static bool prev_mouse_right = false;
 static int right_menu_x = 0;
 static int right_menu_y = 0;
 
+static bool wifi_menu_open = false;
+#define WIFI_MENU_W 220
+#define WIFI_MENU_H 160
+
 #define RIGHT_MENU_W 160
 #define RIGHT_MENU_H 100
 
@@ -243,6 +247,23 @@ void desktop_redraw(void) {
         time_str[5] = '\0';
 
         gfx_draw_text(clock_x + 10, clock_y + 6, 0xFFFFFFFF, time_str);
+
+        // --- WIFI MENU (Drawn if open) ---
+        int wifi_w = 32;
+        int wifi_h = 24;
+        int wifi_x = screen_w - clock_w - wifi_w - 16;
+        int wifi_y = taskbar_y + 6;
+
+        uint32_t wifi_bg = wifi_menu_open ? 0xFF2A2A2A : 0xFF3A3A3A;
+        gfx_fill_rect(wifi_x, wifi_y, wifi_w, wifi_h, wifi_bg);
+        // 3D frame effect
+        gfx_fill_rect(wifi_x, wifi_y, wifi_w, 1, 0xFF555555); // Top
+        gfx_fill_rect(wifi_x, wifi_y, 1, wifi_h, 0xFF555555); // Left
+        gfx_fill_rect(wifi_x + wifi_w - 1, wifi_y, 1, wifi_h, 0xFF111111); // Right
+        gfx_fill_rect(wifi_x, wifi_y + wifi_h - 1, wifi_w, 1, 0xFF111111); // Bottom
+
+        // Wi-Fi icon (simple representation)
+        gfx_draw_text(wifi_x + 8, wifi_y + 6, 0xFFFFFFFF, "Wi-Fi");
     }
 
     // 6. --- START MENU (Drawn if open) ---
@@ -327,6 +348,58 @@ void desktop_redraw(void) {
         gfx_fill_rect(r_x, r_y, 1, r_h, 0xFF666666); // Left
         gfx_fill_rect(r_x + r_w - 1, r_y, 1, r_h, 0xFF111111); // Right
         gfx_fill_rect(r_x, r_y + r_h - 1, r_w, 1, 0xFF111111); // Bottom
+    }
+
+    // 6.7. --- Wi-Fi MENU (Drawn if open) ---
+    if (wifi_menu_open) {
+        int w_w = WIFI_MENU_W;
+        int w_h = WIFI_MENU_H;
+        int w_x = screen_w - w_w - 8; // Sağ kenardan hizalı
+        int w_y = taskbar_y - w_h - 4; // Görev çubuğunun hemen üstü
+
+        // Menü arkaplanı
+        gfx_fill_rect(w_x, w_y, w_w, w_h, 0xFF222222);
+
+        // Başlık
+        gfx_draw_text(w_x + 12, w_y + 10, 0xFFFFFFFF, "Available Networks");
+        gfx_fill_rect(w_x + 8, w_y + 32, w_w - 16, 1, 0xFF444444);
+
+        int cur_x = cursor_get_x();
+        int cur_y = cursor_get_y();
+
+        // Örnek Dummy Ağlar ve Kutuları
+        const char* networks[3] = { "KuvixLab_WiFi", "LenorGuest", "HomeNet_5G" };
+        int item_y = w_y + 40;
+        int item_h = 28;
+
+        for (int i = 0; i < 3; i++) {
+            int item_x = w_x + 10;
+            int item_w = w_w - 20;
+
+            // Fare bu ağ kutusunun üzerinde mi? (Hover kontrolü)
+            bool hover = (cur_x >= item_x && cur_x <= item_x + item_w &&
+                          cur_y >= item_y && cur_y <= item_y + item_h);
+
+            uint32_t box_bg = hover ? 0xFF3A3A3A : 0xFF2A2A2A; // Hover olunca parlasın
+            uint32_t text_color = hover ? 0xFF00FF66 : 0xFFFFFFFF;
+
+            // Ağ buton kutusu arkaplanı
+            gfx_fill_rect(item_x, item_y, item_w, item_h, box_bg);
+            // Kutunun 3D ince çerçevesi
+            gfx_fill_rect(item_x, item_y, item_w, 1, 0xFF444444);
+            gfx_fill_rect(item_x, item_y, 1, item_h, 0xFF444444);
+
+            // Ağ Adı Metni
+            gfx_draw_text(item_x + 10, item_y + 8, text_color, networks[i]);
+
+            item_y += item_h + 6;
+        }
+
+        // Menü Dış Çerçevesi
+        gfx_fill_rect(w_x, w_y, w_w, 1, 0xFF666666); // Top
+        gfx_fill_rect(w_x, w_y, 1, w_h, 0xFF666666); // Left
+        gfx_fill_rect(w_x + w_w - 1, w_y, 1, w_h, 0xFF111111); // Right
+        gfx_fill_rect(w_x, w_y + w_h - 1, w_w, 1, 0xFF111111); // Bottom
     }
 
     // 7. Draw the cursor at its new back-buffer position (blit=false because we perform one combined blit)
@@ -530,6 +603,36 @@ void desktop_process_input(void) {
 
                 if (!inside_menu) {
                     start_menu_open = false;
+                    damage_union_rect(0, 0, screen_w, screen_h);
+                    desktop_redraw();
+                }
+            }
+        }
+        // --- WI-FI İKONUNA VEYA MENÜSÜNE TIKLANDI MI? ---
+        else {
+            int wifi_w = 32;
+            int wifi_h = 24;
+            int clock_w = 70;
+            int wifi_x = screen_w - clock_w - wifi_w - 16;
+            int wifi_y = taskbar_y + 6;
+
+            if (new_x >= wifi_x && new_x <= wifi_x + wifi_w &&
+                new_y >= wifi_y && new_y <= wifi_y + wifi_h) {
+                wifi_menu_open = !wifi_menu_open;
+                start_menu_open = false;
+                right_menu_open = false;
+
+                damage_union_rect(0, 0, screen_w, screen_h);
+                desktop_redraw();
+            } else if (wifi_menu_open) {
+                int w_w = WIFI_MENU_W;
+                int w_h = WIFI_MENU_H;
+                int w_x = screen_w - w_w - 8;
+                int w_y = taskbar_y - w_h - 4;
+
+                if (!(new_x >= w_x && new_x <= w_x + w_w &&
+                      new_y >= w_y && new_y <= w_y + w_h)) {
+                    wifi_menu_open = false;
                     damage_union_rect(0, 0, screen_w, screen_h);
                     desktop_redraw();
                 }
