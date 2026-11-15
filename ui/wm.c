@@ -37,6 +37,8 @@ static window_t* dragged_window = 0;
 static window_t* resized_window = 0;
 static window_t* hovered_window = 0;
 static uint8_t hovered_close_button = 0;
+static uint8_t hovered_min_button = 0;
+static uint8_t hovered_max_button = 0;
 static int resize_direction = RESIZE_NONE;
 static uint8_t prev_buttons = 0;
 static int resize_old_x = 0;
@@ -199,6 +201,8 @@ void wm_draw_window(window_t* win) {
     if (!win || win->width == 0) return;
 
     bool title_hovered = hovered_window == win;
+    
+    // 3 buton için hover durumları (İsteğe bağlı olarak ayrı takip edebilirsin)
     bool close_hovered = title_hovered && hovered_close_button;
 
     int header_height = win->has_tabs ? 48 : 24;
@@ -240,14 +244,14 @@ void wm_draw_window(window_t* win) {
     // 4. Sekmeler varsa başlık çubuğunun İÇİNE sekmeleri, ikonlarını ve '+' butonunu çiz
     if (win->has_tabs) {
         int tab_w = 90;
-        int max_visible_w = win->width - 30; // Sağdaki [X] kapatma butonu için pay
+        int max_visible_w = win->width - 110; // Sağdaki 3'lü buton grubu için pay (3 x ~36px)
         int last_tab_x = win->x + 4;
 
         for (int i = 0; i < win->tab_count; i++) {
             int tab_x = win->x + 4 + (i * (tab_w + 2));
             last_tab_x = tab_x; 
 
-            // [X] butonunun üzerine taşmayı engelle
+            // Butonların üzerine taşmayı engelle
             if (tab_x + tab_w > win->x + max_visible_w) break;
 
             uint32_t tab_bg = (i == win->active_tab_index) ? 0xFF3C3C3C : 0xFF222222;
@@ -266,72 +270,88 @@ void wm_draw_window(window_t* win) {
             int text_offset = (win->tabs[i].icon_pixels && win->tabs[i].icon_w > 0) ? 24 : 8;
             gfx_draw_text_utf8(tab_x + text_offset, win->y + 6, 0xFFFFFFFF, win->tabs[i].title);
 
-            // --- YENİ: SEKME İÇİ KIRMIZI 'x' KAPATMA BUTONU ---
+            // --- SEKME İÇİ KIRMIZI 'x' KAPATMA BUTONU ---
             int close_btn_x = tab_x + tab_w - 18;
             int close_btn_y = win->y + 6;
             gfx_fill_rect(close_btn_x, close_btn_y, 12, 12, 0xFFE81123);
             gfx_draw_text_utf8(close_btn_x + 2, close_btn_y - 1, 0xFFFFFFFF, "x");
         }
 
-        // --- YENİ: SON SEKMENİN SAĞINA '+' (YENİ SEKME) BUTONU ---
+        // --- SON SEKMENİN SAĞINA '+' (YENİ SEKME) BUTONU ---
         int plus_btn_x = last_tab_x + tab_w + 6;
         int plus_btn_y = win->y + 4;
-        int close_btn_limit = win->x + win->width - 26;
+        int close_btn_limit = win->x + win->width - 110;
 
-        // Eğer [X] butonuna çarpmıyorsa '+' butonunu çiz
         if (plus_btn_x + 18 < close_btn_limit) {
-            // Küçük şık bir yuvarlatılmış kare buton
             gfx_fill_rounded_rect_advanced(plus_btn_x, plus_btn_y, 18, 18, 4, 4, 4, 4, 0xFF2A2A2A);
-            // Ortasına '+' sembolü
             gfx_draw_text_utf8(plus_btn_x + 5, plus_btn_y + 1, 0xFF888888, "+");
         }
     } else {
         // Normal pencere başlığı metni
-        if (win->width > 16) {
+        if (win->width > 120) {
             gfx_draw_text_utf8(win->x + 8, win->y + 6, 0xFFFFFFFF, win->title);
         }
     }
 
-    // 5. Close [X] button (top-right corner)
-    int btn_x = win->x + win->width - 22;
-    int btn_y = win->y + 3;
-    // Show close button only if the window is wide enough
-    if (win->width >= 30) {
-        gfx_fill_rect(btn_x, btn_y, 18, 18, close_hovered ? 0xFFFF5A5F : 0xFFE81123);
-        gfx_draw_text_utf8(btn_x + 5, btn_y + 2, 0xFFFFFFFF, "X");
+    // 5. Sağ Üst Köşede Yan Yana 3 Adet Dikdörtgen Buton
+    int btn_width = 36;   
+    int btn_height = 24;  
+    int total_btns_width = btn_width * 3;
+    int btns_start_x = win->x + win->width - total_btns_width;
+    int btns_y = win->y;
+
+    if (win->width >= total_btns_width) {
+        uint32_t default_btn_bg = title_color; 
+
+        // 5.1. Minimize Butonu (-) - Üzerindeyse beyaz fon, siyah/koyu simge
+        uint32_t min_bg = (hovered_window == win && hovered_min_button) ? 0xFFE0E0E0 : default_btn_bg;
+        uint32_t min_text_color = (hovered_window == win && hovered_min_button) ? 0xFF000000 : 0xFFFFFFFF;
+        
+        gfx_fill_rect(btns_start_x, btns_y, btn_width, btn_height, min_bg);
+        gfx_draw_text_utf8(btns_start_x + 14, btns_y + 4, min_text_color, "-");
+
+        // 5.2. Maximize Butonu (▢) - Üzerindeyse beyaz fon, siyah/koyu simge
+        uint32_t max_bg = (hovered_window == win && hovered_max_button) ? 0xFFE0E0E0 : default_btn_bg;
+        uint32_t max_text_color = (hovered_window == win && hovered_max_button) ? 0xFF000000 : 0xFFFFFFFF;
+
+        gfx_fill_rect(btns_start_x + btn_width, btns_y, btn_width, btn_height, max_bg);
+        gfx_draw_text_utf8(btns_start_x + btn_width + 13, btns_y + 5, max_text_color, "□");
+
+        // 5.3. Close Butonu (X) - Üzerindeyse kırmızı
+        uint32_t close_bg = (hovered_window == win && hovered_close_button) ? 0xFFE81123 : default_btn_bg;
+        gfx_fill_rect(btns_start_x + (btn_width * 2), btns_y, btn_width, btn_height, close_bg);
+        gfx_draw_text_utf8(btns_start_x + (btn_width * 2) + 13, btns_y + 4, 0xFFFFFFFF, "X");
     }
 
-    // 6. Draw labels (hide those extending outside window boundaries - with text overflow protection)
+    // 6. Draw labels
     for (int i = 0; i < win->label_count; i++) {
         label_item_t* l = &win->labels[i];
         int rel_x = l->x;
-        int rel_y = 24 + l->y; // 24 pixel titlebar offset
+        int rel_y = 24 + l->y;
 
         if (rel_x >= 0 && rel_x < win->width && rel_y >= 24 && rel_y < win->height) {
             gfx_draw_text_utf8(win->x + rel_x, win->y + rel_y, l->color, l->text);
         }
     }
 
-    // --- BURAYA EKLENECEK: 6.5. Draw browser link underlines (<a> etiketleri için alt çizgi) ---
+    // 6.5. Draw browser link underlines
     for (int i = 0; i < win->link_count; i++) {
         browser_link_t* lnk = &win->links[i];
         int rel_x = lnk->x;
-        int rel_y = 24 + lnk->y + 16; // Metin yüksekliğinin hemen altı
+        int rel_y = 24 + lnk->y + 16;
         int lw = lnk->width;
 
-        // Kırpma (Clipping) ve sınır kontrolleri
         if (rel_x >= 0 && rel_x < win->width && rel_y >= 24 && rel_y < win->height) {
             if (rel_x + lw > win->width) {
                 lw = win->width - rel_x;
             }
             if (lw > 0) {
-                // Mavi alt çizgi (0xFF007ACC)
                 gfx_fill_rect(win->x + rel_x, win->y + rel_y, lw, 1, 0xFF007ACC);
             }
         }
     }
 
-    // 7. Draw buttons (with advanced clipping support)
+    // 7. Draw buttons
     for (int i = 0; i < win->button_count; i++) {
         button_t* b = &win->buttons[i];
         int rel_x = b->x;
@@ -339,11 +359,9 @@ void wm_draw_window(window_t* win) {
         int bw = b->width;
         int bh = b->height;
 
-        // Left/Top clipping
         if (rel_x < 0) { bw += rel_x; rel_x = 0; }
         if (rel_y < 24) { bh += (rel_y - 24); rel_y = 24; }
 
-        // Right/Bottom clipping
         if (rel_x < win->width && rel_y < win->height) {
             if (rel_x + bw > win->width) bw = win->width - rel_x;
             if (rel_y + bh > win->height) bh = win->height - rel_y;
@@ -354,48 +372,25 @@ void wm_draw_window(window_t* win) {
                 
                 uint32_t current_bg_color = b->is_hovered ? (b->hover_color != 0 ? b->hover_color : 0xFF505050) : b->bg_color;
                 
-                // Button background (with clipped dimensions)
                 gfx_fill_rect(abs_x, abs_y, bw, bh, current_bg_color);
                 
-                // Button text (draw only if the left part of the button is visible)
                 if (bw > 10) {
                     gfx_draw_text_utf8(abs_x + 8, abs_y + 8, b->text_color, b->text);
                 }
             }
         }
-
-        if (win->has_canvas && win->canvas_buffer) {
-            int rel_x = win->canvas_x;
-            int rel_y = 24 + win->canvas_y;
-            int cw = win->canvas_w;
-            int ch = win->canvas_h;
-
-            if (rel_x < 0) { rel_x = 0; }
-            if (rel_y < 24) { rel_y = 24; }
-
-            if (rel_x < win->width && rel_y < win->height) {
-                if (rel_x + cw > win->width) cw = win->width - rel_x;
-                if (rel_y + ch > win->height) ch = win->height - rel_y;
-
-                if (cw > 0 && ch > 0) {
-                    gfx_draw_buffer(win->x + rel_x, win->y + rel_y, cw, ch, win->canvas_buffer, win->canvas_w);
-                }
-            }
-        }
     }
 
-    // [YENİ / DÜZELTİLMİŞ] 7.5. Draw Canvas (3D Oyun / Piksel Tamponu)
+    // 7.5. Draw Canvas (3D Oyun / Piksel Tamponu)
     if (win->has_canvas && win->canvas_buffer) {
         int rel_x = win->canvas_x;
-        int rel_y = 24 + win->canvas_y; // 24 piksel başlık çubuğu payı
+        int rel_y = 24 + win->canvas_y;
         int cw = win->canvas_w;
         int ch = win->canvas_h;
 
-        // Sol/Üst kırpma (clipping)
         if (rel_x < 0) { cw += rel_x; rel_x = 0; }
         if (rel_y < 24) { ch += (rel_y - 24); rel_y = 24; }
 
-        // Sağ/Alt kırpma
         if (rel_x < win->width && rel_y < win->height) {
             if (rel_x + cw > win->width) cw = win->width - rel_x;
             if (rel_y + ch > win->height) ch = win->height - rel_y;
@@ -403,14 +398,12 @@ void wm_draw_window(window_t* win) {
             if (cw > 0 && ch > 0) {
                 int abs_x = win->x + rel_x;
                 int abs_y = win->y + rel_y;
-
-                // Ham piksel buffer'ını ekrana / grafik alt sistemine aktar
                 gfx_draw_buffer(abs_x, abs_y, cw, ch, win->canvas_buffer, win->canvas_w);
             }
         }
     }
 
-    // 8. Draw pictureboxes (Resim Kutuları)
+    // 8. Draw pictureboxes
     for (int i = 0; i < win->picturebox_count; i++) {
         picturebox_t* p = &win->pictureboxes[i];
         int rel_x = p->x;
@@ -421,17 +414,8 @@ void wm_draw_window(window_t* win) {
         int src_x = 0;
         int src_y = 0;
 
-        // Kırpma (Clipping) kontrolleri ve kaynak (source) ofsetleri
-        if (rel_x < 0) { 
-            src_x = -rel_x;     // Soldan kırpıldıysa kaynakta sağa kay
-            pw += rel_x; 
-            rel_x = 0; 
-        }
-        if (rel_y < 24) { 
-            src_y = 24 - rel_y; // Üstten kırpıldıysa kaynakta aşağı kay
-            ph += (rel_y - 24); 
-            rel_y = 24; 
-        }
+        if (rel_x < 0) { src_x = -rel_x; pw += rel_x; rel_x = 0; }
+        if (rel_y < 24) { src_y = 24 - rel_y; ph += (rel_y - 24); rel_y = 24; }
 
         if (rel_x < win->width && rel_y < win->height) {
             if (rel_x + pw > win->width) pw = win->width - rel_x;
@@ -440,17 +424,13 @@ void wm_draw_window(window_t* win) {
             if (pw > 0 && ph > 0 && p->pixels) {
                 int abs_x = win->x + rel_x;
                 int abs_y = win->y + rel_y;
-
-                // Kaynak piksellerin başlangıç adresini ofset kadar kaydırıyoruz
                 uint32_t* src_pixels = p->pixels + (src_y * p->img_width + src_x);
-
-                // Düzeltilmiş kaynak adresi ve orijinal genişlik (stride) ile çiz
                 gfx_draw_buffer(abs_x, abs_y, pw, ph, src_pixels, p->img_width);
             }
         }
     }
 
-    // 9. Draw text inputs (Metin Kutuları)
+    // 9. Draw text inputs
     for (int i = 0; i < win->input_count; i++) {
         text_input_t* inp = &win->inputs[i];
         int rel_x = inp->x;
@@ -458,7 +438,6 @@ void wm_draw_window(window_t* win) {
         int iw = inp->width;
         int ih = inp->height;
 
-        // Kırpma (Clipping) kontrolleri
         if (rel_x < 0) { iw += rel_x; rel_x = 0; }
         if (rel_y < 24) { ih += (rel_y - 24); rel_y = 24; }
 
@@ -470,28 +449,22 @@ void wm_draw_window(window_t* win) {
                 int abs_x = win->x + rel_x;
                 int abs_y = win->y + rel_y;
 
-                // Kutunun arkaplanını çiz
                 gfx_fill_rect(abs_x, abs_y, iw, ih, inp->bg_color);
 
-                // Kenarlık varsa çiz
                 if (inp->border_thickness > 0) {
-                    // Dört bir kenara ince kenarlık çizgisi çizebilirsin veya etrafını sarabilirsin
-                    gfx_fill_rect(abs_x, abs_y, iw, inp->border_thickness, inp->border_color); // Üst
-                    gfx_fill_rect(abs_x, abs_y + ih - inp->border_thickness, iw, inp->border_thickness, inp->border_color); // Alt
-                    gfx_fill_rect(abs_x, abs_y, inp->border_thickness, ih, inp->border_color); // Sol
-                    gfx_fill_rect(abs_x + iw - inp->border_thickness, abs_y, inp->border_thickness, ih, inp->border_color); // Sağ
+                    gfx_fill_rect(abs_x, abs_y, iw, inp->border_thickness, inp->border_color);
+                    gfx_fill_rect(abs_x, abs_y + ih - inp->border_thickness, iw, inp->border_thickness, inp->border_color);
+                    gfx_fill_rect(abs_x, abs_y, inp->border_thickness, ih, inp->border_color);
+                    gfx_fill_rect(abs_x + iw - inp->border_thickness, abs_y, inp->border_thickness, ih, inp->border_color);
                 }
 
-                // Metin veya Placeholder çizimi
                 if (inp->text[0] != '\0') {
                     gfx_draw_text_utf8(abs_x + 6, abs_y + 6, inp->text_color, inp->text);
                 } else if (inp->placeholder[0] != '\0') {
                     gfx_draw_text_utf8(abs_x + 6, abs_y + 6, inp->placeholder_color, inp->placeholder);
                 }
 
-                // Eğer bu kutu şu an odaktaysa (active_input ise) sonuna imleç çizgisi (|) koy
                 if (active_input == inp) {
-                    // Metin uzunluğuna göre imlecin X koordinatını kaba taslak hesaplayabiliriz (her karakter ortalama 8 piksel)
                     int text_len = 0;
                     while(inp->text[text_len] != '\0') text_len++;
                     int cursor_pos_x = abs_x + 6 + (text_len * 8);
@@ -503,7 +476,7 @@ void wm_draw_window(window_t* win) {
         }
     }
 
-    // 10. Draw comboboxes (Açılır Menüler)
+    // 10. Draw comboboxes
     for (int i = 0; i < win->combobox_count; i++) {
         combobox_t* cb = &win->comboboxes[i];
         int rel_x = cb->x;
@@ -511,7 +484,6 @@ void wm_draw_window(window_t* win) {
         int cw = cb->width;
         int ch = cb->height;
 
-        // Kırpma (Clipping) kontrolleri
         if (rel_x < 0) { cw += rel_x; rel_x = 0; }
         if (rel_y < 24) { ch += (rel_y - 24); rel_y = 24; }
 
@@ -523,40 +495,28 @@ void wm_draw_window(window_t* win) {
                 int abs_x = win->x + rel_x;
                 int abs_y = win->y + rel_y;
 
-                // Ana combobox kutusu arka planı ve çerçevesi
                 gfx_fill_rect(abs_x, abs_y, cw, ch, cb->bg_color);
-                
-                // Basit çerçeve çizgileri
-                gfx_fill_rect(abs_x, abs_y, cw, 1, cb->border_color); // Üst
-                gfx_fill_rect(abs_x, abs_y + ch - 1, cw, 1, cb->border_color); // Alt
-                gfx_fill_rect(abs_x, abs_y, 1, ch, cb->border_color); // Sol
-                gfx_fill_rect(abs_x + cw - 1, abs_y, 1, ch, cb->border_color); // Sağ
+                gfx_fill_rect(abs_x, abs_y, cw, 1, cb->border_color);
+                gfx_fill_rect(abs_x, abs_y + ch - 1, cw, 1, cb->border_color);
+                gfx_fill_rect(abs_x, abs_y, 1, ch, cb->border_color);
+                gfx_fill_rect(abs_x + cw - 1, abs_y, 1, ch, cb->border_color);
 
-                // Seçili öğe metnini çiz
                 if (cb->items && cb->selected_index >= 0 && cb->selected_index < cb->item_count) {
                     gfx_draw_text_utf8(abs_x + 6, abs_y + 6, cb->text_color, cb->items[cb->selected_index]);
                 }
 
-                // Sağ tarafa ok işareti simgesi
                 gfx_draw_text_utf8(abs_x + cw - 16, abs_y + 6, cb->text_color, "v");
 
-                // Eğer menü açıksa (is_open == true), açılır listeyi çiz
                 if (cb->is_open && cb->item_count > 0) {
                     int item_height = 20;
                     int list_height = cb->item_count * item_height;
                     int list_y = abs_y + ch;
 
-                    // Liste arka planı (örneğin beyaz veya koyu tema rengi)
                     gfx_fill_rect(abs_x, list_y, cw, list_height, 0xFFFFFFFF);
-                    
-                    // Liste dış çerçevesi
                     gfx_fill_rect(abs_x, list_y, cw, list_height, cb->border_color);
 
-                    // Öğeleri listele
                     for (int j = 0; j < cb->item_count; j++) {
                         int cur_item_y = list_y + (j * item_height);
-                        
-                        // Eğer fare bu öğenin üzerindeyse arka planı renklendirebilirsin
                         if (j == cb->selected_index) {
                             gfx_fill_rect(abs_x + 1, cur_item_y, cw - 2, item_height, 0xFF007ACC);
                             gfx_draw_text_utf8(abs_x + 6, cur_item_y + 4, 0xFFFFFFFF, cb->items[j]);
@@ -658,9 +618,68 @@ static window_t* wm_bring_to_front(window_t* win) {
 }
 
 static void wm_update_hover_state(void) {
+    // Yerel değişken yerine global/static olan hovered_window değişkenini güncelliyoruz
+    hovered_window = wm_find_at(mouse_x, mouse_y);
+
     for (int i = 0; i < window_count; i++) {
         window_t* win = &window_list[i];
         if (!win || win->width == 0) continue;
+
+        // --- 3'lü Buton Grubu Kapatma (Close) Butonu Hover Kontrolü ---
+        // hovered_window artık doğru şekilde güncellendiği için burası çalışacak
+        if (win == hovered_window && win->is_active) {
+            int btn_width = 36;
+            int btn_height = 24;
+            int total_btns_width = btn_width * 3;
+            int btns_start_x = win->x + win->width - total_btns_width;
+            int btns_y = win->y;
+            
+            int min_btn_x = btns_start_x;                  // 1. Buton: Minimize
+            int max_btn_x = btns_start_x + btn_width;      // 2. Buton: Maximize
+            int close_btn_x = btns_start_x + (btn_width * 2); // 3. Buton: Close
+
+            // --- Minimize Butonu Hover Kontrolü ---
+            if (mouse_x >= min_btn_x && mouse_x < min_btn_x + btn_width &&
+                mouse_y >= btns_y && mouse_y < btns_y + btn_height) {
+                if (!hovered_min_button) {
+                    hovered_min_button = 1;
+                    damage_union_rect(min_btn_x, btns_y, btn_width, btn_height);
+                }
+            } else {
+                if (hovered_min_button) {
+                    hovered_min_button = 0;
+                    damage_union_rect(min_btn_x, btns_y, btn_width, btn_height);
+                }
+            }
+
+            // --- Maximize Butonu Hover Kontrolü ---
+            if (mouse_x >= max_btn_x && mouse_x < max_btn_x + btn_width &&
+                mouse_y >= btns_y && mouse_y < btns_y + btn_height) {
+                if (!hovered_max_button) {
+                    hovered_max_button = 1;
+                    damage_union_rect(max_btn_x, btns_y, btn_width, btn_height);
+                }
+            } else {
+                if (hovered_max_button) {
+                    hovered_max_button = 0;
+                    damage_union_rect(max_btn_x, btns_y, btn_width, btn_height);
+                }
+            }
+
+            // --- Close Butonu Hover Kontrolü (Zaten vardı) ---
+            if (mouse_x >= close_btn_x && mouse_x < close_btn_x + btn_width &&
+                mouse_y >= btns_y && mouse_y < btns_y + btn_height) {
+                if (!hovered_close_button) {
+                    hovered_close_button = 1;
+                    damage_union_rect(close_btn_x, btns_y, btn_width, btn_height);
+                }
+            } else {
+                if (hovered_close_button) {
+                    hovered_close_button = 0;
+                    damage_union_rect(close_btn_x, btns_y, btn_width, btn_height);
+                }
+            }
+        }
 
         // --- 1. BUTONLAR İÇİN HOVER KONTROLÜ ---
         for (int b = 0; b < win->button_count; b++) {
@@ -688,8 +707,6 @@ static void wm_update_hover_state(void) {
         for (int p_idx = 0; p_idx < win->panel_count; p_idx++) {
             panel_t* panel = &win->panels[p_idx];
 
-            // EĞER panelin hover rengi yoksa (0 ise) VE on_hover callback'i de tanımlı değilse,
-            // bu panel için hover tetiklemeye gerek yoktur!
             if (panel->hover_color == 0 && panel->on_hover == NULL) {
                 continue;
             }
@@ -712,11 +729,8 @@ static void wm_update_hover_state(void) {
             }
         }
 
-        // wm_update_hover_state fonksiyonunun uygun bir yerine veya sonuna ekleyin:
-        for (int i = 0; i < window_count; i++) {
-            window_t* win = &window_list[i];
-            if (!win->is_active) continue;
-
+        // --- 3. COMBOBOX AÇILIR LİSTE HOVER KONTROLÜ ---
+        if (win->is_active) {
             for (int c = 0; c < win->combobox_count; c++) {
                 combobox_t* cb = &win->comboboxes[c];
                 if (!cb->is_open || cb->item_count <= 0) continue;
@@ -727,7 +741,6 @@ static void wm_update_hover_state(void) {
                 int list_height = cb->item_count * item_height;
                 int list_y = abs_y + cb->height;
 
-                // Fare açık olan açılır menünün üzerindeyse alanı kirli işaretle
                 if (mouse_x >= abs_x && mouse_x < abs_x + cb->width &&
                     mouse_y >= list_y && mouse_y < list_y + list_height) {
                     damage_union_rect(abs_x, list_y, cb->width, list_height);
@@ -871,14 +884,19 @@ void wm_process_input(void) {
             // İŞTE BURAYA EKLENECEK: Tıklanan pencerenin başlık çubuğu ve gövdesini tazele
             damage_union_rect(target->x, target->y, target->width, target->height);
 
-            int btn_x = target->x + target->width - 22;
-            int btn_y = target->y + 3;
+            int btn_width = 36;
+            int btn_height = 24;
+            int total_btns_width = btn_width * 3;
+            int btns_start_x = target->x + target->width - total_btns_width;
+            int close_btn_x = btns_start_x + (btn_width * 2);
+            int btn_y = target->y;
 
             cursor_prepare_redraw();
 
-            // [X] Close button
-            if (mouse_x >= btn_x && mouse_x <= btn_x + 18 &&
-                mouse_y >= btn_y && mouse_y <= btn_y + 18) {
+            // [X] Close button (Sağdaki 3. buton)
+            if (target->width >= total_btns_width &&
+                mouse_x >= close_btn_x && mouse_x < close_btn_x + btn_width &&
+                mouse_y >= btn_y && mouse_y < btn_y + btn_height) {
                 wm_close_window(target);
                 cursor_sync_position();
                 cursor_show();
