@@ -2,6 +2,7 @@
 #define EHCI_H
 
 #include <stdint.h>
+#include <kernel/drivers/usb/core.h>
 
 // EHCI PCI Sınıf Kodları
 #define EHCI_CLASS_CODE 0x0C
@@ -10,6 +11,7 @@
 
 // EHCI Sürücü Fonksiyonları
 int ehci_detect_controller(void);
+int ehci_control_transfer(usb_setup_packet_t* setup, void* data, uint16_t length);
 void ehci_init(void);
 uint8_t ehci_poll(void);
 uint8_t ehci_is_active(void);
