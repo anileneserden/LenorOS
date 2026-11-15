@@ -32,7 +32,7 @@
 // serial.c içerisindeki mirror fonksiyonunun prototipi
 extern void serial_screen_mirror_enable(bool enable);
 
-#define LOAD_FONT_SCREEN 1 // 1 yaparsan saf font test ekranı açılır, 0 yaparsan normal masaüstü yüklenir
+#define LOAD_FONT_SCREEN 0 // 1 yaparsan saf font test ekranı açılır, 0 yaparsan normal masaüstü yüklenir
 
 void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     serial_init();
