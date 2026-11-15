@@ -46,6 +46,9 @@ static int resize_old_x = 0;
 static int resize_old_y = 0;
 static int resize_old_w = 0;
 static int resize_old_h = 0;
+static uint32_t last_click_time = 0;
+static window_t* last_clicked_win = 0;
+static uint32_t global_wm_ticks = 0;
 
 void wm_init(void) {
     window_count = 0;
@@ -195,6 +198,79 @@ void wm_close_window(window_t* win) {
     }
 
     damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+    desktop_redraw();
+}
+
+static void wm_toggle_maximize(window_t* win) {
+    if (!win) return;
+
+    // 1. Önce eski konum ve boyutundaki alanı tam kirli işaretle
+    damage_union_rect(win->x, win->y, win->width, win->height);
+
+    if (!win->is_maximized) {
+        win->prev_x = win->x;
+        win->prev_y = win->y;
+        win->prev_width = win->width;
+        win->prev_height = win->height;
+
+        int screen_w = fb_get_width();
+        int screen_h = fb_get_height() - 36; // Alt görev çubuğu payı
+
+        win->x = 0;
+        win->y = 0;
+        win->width = screen_w;
+        win->height = screen_h;
+        win->is_maximized = true;
+    } else {
+        win->x = win->prev_x;
+        win->y = win->prev_y;
+        win->width = win->prev_width;
+        win->height = win->prev_height;
+        win->is_maximized = false;
+    }
+
+    // --- ÖNEMLİ: Butonlar üzerinde kalan "takılı kalmış" hover durumlarını sıfırla ---
+    hovered_max_button = 0;
+    hovered_min_button = 0;
+    hovered_close_button = 0;
+
+    // 2. İç bileşenlerin referans boyutlarını güncelle
+    win->init_win_w = win->width;
+    win->init_win_h = win->height;
+
+    for (int i = 0; i < win->panel_count; i++) {
+        win->panels[i].init_x = win->panels[i].x;
+        win->panels[i].init_y = win->panels[i].y;
+        win->panels[i].init_width = win->panels[i].width;
+        win->panels[i].init_height = win->panels[i].height;
+        win->panels[i].init_win_w = win->width;
+        win->panels[i].init_win_h = win->height;
+    }
+    for (int i = 0; i < win->button_count; i++) {
+        win->buttons[i].init_x = win->buttons[i].x;
+        win->buttons[i].init_y = win->buttons[i].y;
+        win->buttons[i].init_width = win->buttons[i].width;
+        win->buttons[i].init_height = win->buttons[i].height;
+        win->buttons[i].init_win_w = win->width;
+        win->buttons[i].init_win_h = win->height;
+    }
+    for (int i = 0; i < win->label_count; i++) {
+        win->labels[i].init_x = win->labels[i].x;
+        win->labels[i].init_y = win->labels[i].y;
+        win->labels[i].init_win_w = win->width;
+        win->labels[i].init_win_h = win->height;
+    }
+    for (int i = 0; i < win->combobox_count; i++) {
+        win->comboboxes[i].init_x = win->comboboxes[i].x;
+        win->comboboxes[i].init_y = win->comboboxes[i].y;
+        win->comboboxes[i].init_width = win->comboboxes[i].width;
+        win->comboboxes[i].init_height = win->comboboxes[i].height;
+        win->comboboxes[i].init_win_w = win->width;
+        win->comboboxes[i].init_win_h = win->height;
+    }
+
+    // 3. Yeni pencere alanının tamamını kirli işaretle ve ekranı çiz
+    damage_union_rect(win->x, win->y, win->width, win->height);
     desktop_redraw();
 }
 
@@ -835,6 +911,8 @@ static void wm_update_cursor(void) {
 }
 
 void wm_process_input(void) {
+    global_wm_ticks++;
+
     wm_update_hover_state();
     wm_update_cursor();
 
@@ -1158,12 +1236,37 @@ void wm_process_input(void) {
                         }
                     }
 
-                    // Bir sekmenin veya '+' butonunun üzerine basılmadıysa pencereyi sürükle
+                    // Bir sekmenin veya '+' butonunun üzerine basılmadıysa sürükleme veya çift tık kontrolü yap
                     if (!clicked_on_tab) {
-                        dragged_window = front_win;
-                        dragged_window->is_dragging = true;
-                        dragged_window->drag_offset_x = mouse_x - target->x;
-                        dragged_window->drag_offset_y = mouse_y - target->y;
+                        int btn_width = 36;
+                        int total_btns_width = btn_width * 3;
+                        int btns_start_x = target->x + target->width - total_btns_width;
+                        int max_btn_x = btns_start_x + btn_width;
+
+                        // 1. Maximize butonuna (□) tıklandıysa direkt tam ekran yap / küçült
+                        if (mouse_x >= max_btn_x && mouse_x < max_btn_x + btn_width &&
+                            mouse_y >= target->y && mouse_y < target->y + 24) {
+                            wm_toggle_maximize(target);
+                        } 
+                        else {
+                            // 2. Başlık çubuğuna çift tıklama kontrolü (Örn: 25 tick eşiği)
+                            if (last_clicked_win == target && (global_wm_ticks - last_click_time < 25)) {
+                                // ÇİFT TIKLAMA TESPİT EDİLDİ!
+                                wm_toggle_maximize(target);
+                                last_clicked_win = 0;
+                                last_click_time = 0;
+                            } else {
+                                // İlk tıklama
+                                last_clicked_win = target;
+                                last_click_time = global_wm_ticks;
+                                
+                                // Normal sürükleme (drag) işlemini başlat
+                                dragged_window = front_win;
+                                dragged_window->is_dragging = true;
+                                dragged_window->drag_offset_x = mouse_x - target->x;
+                                dragged_window->drag_offset_y = mouse_y - target->y;
+                            }
+                        }
                     }
                 }
             }
@@ -1356,6 +1459,49 @@ void wm_process_input(void) {
             }
         }
         else if (dragged_window && dragged_window->is_dragging) {
+            // EĞER pencere tam ekrandaysa ve kullanıcı sürüklemeye başladıysa eski haline döndür
+            if (dragged_window->is_maximized) {
+                damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+
+                dragged_window->is_maximized = false;
+                
+                int old_w = dragged_window->prev_width;
+                int old_h = dragged_window->prev_height;
+                
+                dragged_window->width = old_w;
+                dragged_window->height = old_h;
+                
+                dragged_window->x = mouse_x - (old_w / 2);
+                dragged_window->y = mouse_y - 12;
+                
+                dragged_window->drag_offset_x = mouse_x - dragged_window->x;
+                dragged_window->drag_offset_y = mouse_y - dragged_window->y;
+
+                // İç elemanların referans boyutlarını eski haline kitle
+                dragged_window->init_win_w = dragged_window->width;
+                dragged_window->init_win_h = dragged_window->height;
+
+                for (int i = 0; i < dragged_window->panel_count; i++) {
+                    dragged_window->panels[i].init_x = dragged_window->panels[i].x;
+                    dragged_window->panels[i].init_y = dragged_window->panels[i].y;
+                    dragged_window->panels[i].init_width = dragged_window->panels[i].width;
+                    dragged_window->panels[i].init_height = dragged_window->panels[i].height;
+                    dragged_window->panels[i].init_win_w = dragged_window->width;
+                    dragged_window->panels[i].init_win_h = dragged_window->height;
+                }
+                for (int i = 0; i < dragged_window->button_count; i++) {
+                    dragged_window->buttons[i].init_x = dragged_window->buttons[i].x;
+                    dragged_window->buttons[i].init_y = dragged_window->buttons[i].y;
+                    dragged_window->buttons[i].init_width = dragged_window->buttons[i].width;
+                    dragged_window->buttons[i].init_height = dragged_window->buttons[i].height;
+                    dragged_window->buttons[i].init_win_w = dragged_window->width;
+                    dragged_window->buttons[i].init_win_h = dragged_window->height;
+                }
+
+                damage_union_rect(0, 0, fb_get_width(), fb_get_height());
+                desktop_redraw();
+            }
+
             int new_x = mouse_x - dragged_window->drag_offset_x;
             int new_y = mouse_y - dragged_window->drag_offset_y;
 
