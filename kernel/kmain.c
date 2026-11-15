@@ -27,9 +27,12 @@
 #include <arch/x86/io.h>
 #include <kernel/hexdump.h>
 #include <kernel/loader/lex2.h>
+#include <kernel/drivers/video/font/ttf.h> // TrueType font kütüphanesi eklendi
 
 // serial.c içerisindeki mirror fonksiyonunun prototipi
 extern void serial_screen_mirror_enable(bool enable);
+
+#define LOAD_FONT_SCREEN 0 // 1 yaparsan saf font test ekranı açılır, 0 yaparsan normal masaüstü yüklenir
 
 void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     serial_init();
@@ -58,14 +61,13 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     pmm_init(mboot);
     vmm_init();
     heap_init(0x2000000, 1024 * 1024 * 16);
-    // DİKKAT: usb_notify_device_connect buradayken henüz sürücü kayıtlı değildi!
 
     // Framebuffer başlatılıyor
     fb_init(mboot);
 
     if (debug_mode) {
         serial_screen_init();
-        serial_screen_mirror_enable(true); // Tüm serial_write logları ekrana da akacak
+        serial_screen_mirror_enable(true); 
         serial_screen_write("DEBUG MODE ACTIVE: Screen & Mirror initialized.\n");
     }
 
@@ -78,7 +80,6 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     usb_init();
     rtl8192eu_init();
 
-    // Sürücüler kayıt olduktan SONRA cihaz bağlantısını simüle ediyoruz / tetikliyoruz:
     usb_notify_device_connect(0x0BDA, 0x818B);
 
     // 3. Filesystems and VFS Initialization
@@ -96,12 +97,24 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     // MBR'den sda2 (LNRFS) offset değerini al
     uint32_t lnrfs_lba_offset = mbr_get_lnrfs_offset();
     
+    // Global font kimliğimiz (başarısız olursa -1 kalır)
+    int system_font_id = -1;
+
     // Offset ile mount et
     if (lnrfs_mount_at_offset(lnrfs_lba_offset) == 0) {
         fs_driver_t lnrfs_driver = lnrfs_get_driver();
         vfs_mount('C', "LNRFS_VOL", lnrfs_driver);
         serial_write("LNRFS mounted successfully and registered to VFS on C:\\.\n");
         run_tls_mock_test();
+
+        // 4. VFS hazır olduğu için arial.ttf dosyasını yüklüyoruz
+        system_font_id = ttf_load_font("C:/Lenor/System32/fonts/arial.ttf");
+        if (system_font_id >= 0) {
+            serial_write("[TTF] arial.ttf basariyla bellege yuklendi!\n");
+            ttf_set_font_size(system_font_id, 18.0f); // Font boyutunu 18 piksel olarak ayarlıyoruz
+        } else {
+            serial_write("[TTF ERROR] arial.ttf dosyasi VFS uzerinden yuklenemedi!\n");
+        }
     } else {
         serial_write("LNRFS: Driver could not be started!\n");
     }
@@ -118,8 +131,43 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
             while (1) {
             }
         } else {
+#if LOAD_FONT_SCREEN
+            fb_clear(0xFF1E1E2E); // Font test ekranı için koyu arkaplan
+            // --- SAF FONT TEST MODU ---
+            if (system_font_id >= 0) {
+                int start_x = 50;
+                int current_y = 50;
+
+                // 1. Büyük Başlık (28px)
+                ttf_set_font_size(system_font_id, 28.0f);
+                ttf_draw_text(system_font_id, start_x, current_y, 0xFFFFFFFF, "LenorOS TrueType Font Engine");
+                current_y += 45;
+
+                // 2. Alt Başlık (20px)
+                ttf_set_font_size(system_font_id, 20.0f);
+                ttf_draw_text(system_font_id, start_x, current_y, 0xFF89B4FA, "TrueType Vector Font Test Active");
+                current_y += 35;
+
+                // 3. Normal Metin (16px)
+                ttf_set_font_size(system_font_id, 16.0f);
+                ttf_draw_text(system_font_id, start_x, current_y, 0xFFA6E3A1, "stb_truetype entegrasyonu basariyla tamamlandi.");
+                current_y += 30;
+
+                ttf_draw_text(system_font_id, start_x, current_y, 0xFFFAB387, "VFS uzerinden arial.ttf okunuyor ve alpha-blending ile ciziliyor.");
+                current_y += 30;
+
+                // 4. Küçük Metin / Detay (12px)
+                ttf_set_font_size(system_font_id, 12.0f);
+                ttf_draw_text(system_font_id, start_x, current_y, 0xFF6C7086, "FreeType bagimliligi olmadan saf C ile bare-metal vektor render.");
+            } else {
+                ttf_set_font_size(system_font_id, 16.0f);
+                ttf_draw_text(system_font_id, 50, 50, 0xFFFF5555, "HATA: Arial.ttf yuklenemedi!");
+            }
+#else
+            // --- ORİJİNAL MASAÜSTÜ MODU (Hiçbir şey silinmedi) ---
             fb_clear(0xFF0000FF);
             desktop_init(); 
+#endif
         }
     }
 

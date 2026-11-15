@@ -42,6 +42,7 @@ SRC_C = \
     kernel/drivers/usb/xhci.c \
     kernel/drivers/video/font/font8x8_basic.c \
     kernel/drivers/video/font/font8x16_basic.c \
+    kernel/drivers/video/font/ttf.c \
     kernel/drivers/video/fb.c \
     kernel/drivers/video/gfx.c \
     kernel/drivers/pci.c \
