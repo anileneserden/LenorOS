@@ -32,7 +32,9 @@
 // serial.c içerisindeki mirror fonksiyonunun prototipi
 extern void serial_screen_mirror_enable(bool enable);
 
-#define LOAD_FONT_SCREEN 0 // 1 yaparsan saf font test ekranı açılır, 0 yaparsan normal masaüstü yüklenir
+#define LOAD_FONT_SCREEN 0
+
+int system_font_id = -1;
 
 void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     serial_init();
@@ -96,9 +98,6 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
 
     // MBR'den sda2 (LNRFS) offset değerini al
     uint32_t lnrfs_lba_offset = mbr_get_lnrfs_offset();
-    
-    // Global font kimliğimiz (başarısız olursa -1 kalır)
-    int system_font_id = -1;
 
     // Offset ile mount et
     if (lnrfs_mount_at_offset(lnrfs_lba_offset) == 0) {
@@ -174,10 +173,10 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     app_manager_init();
     fb_swap();
 
-    if (lex2_load_and_run("C:/Program Files/notepad/notepad.lex")) {
-        serial_write("notepad uygulamasi basariyla calistirildi!\n");
+    if (lex2_load_and_run("C:/Program Files/testFontLoad/testFontLoad.lex")) {
+        serial_write("testFontLoad uygulamasi basariyla calistirildi!\n");
     } else {
-        serial_write("HATA: notepad uygulamasi yuklenemedi!\n");
+        serial_write("HATA: testFontLoad uygulamasi yuklenemedi!\n");
     }
 
     // 6. AC97 audio driver initialization

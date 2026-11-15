@@ -8,6 +8,14 @@ void gfx_draw_pixel(int x, int y, uint32_t color) {
     fb_putpixel(x, y, color);
 }
 
+void gfx_putpixel(int x, int y, uint32_t color) {
+    fb_putpixel(x, y, color);
+}
+
+uint32_t gfx_getpixel(int x, int y) {
+    return fb_getpixel(x, y);
+}
+
 void gfx_fill_rect(int x, int y, int width, int height, uint32_t color) {
     for (int cy = 0; cy < height; cy++) {
         for (int cx = 0; cx < width; cx++) {

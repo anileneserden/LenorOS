@@ -18,4 +18,7 @@ void gfx_draw_text_utf8(int x, int y, uint32_t color, const char* s);
 
 void gfx_draw_buffer(int x, int y, int width, int height, const uint32_t* buffer, int buffer_stride);
 
+void gfx_putpixel(int x, int y, uint32_t color);
+uint32_t gfx_getpixel(int x, int y);
+
 #endif

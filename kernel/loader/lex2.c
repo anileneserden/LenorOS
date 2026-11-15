@@ -5,6 +5,7 @@
 #include <kernel/string.h>
 #include <ui/wm.h>
 #include <kernel/drivers/video/gfx.h>
+#include <kernel/drivers/video/fb.h>
 #include <ui/desktop.h>
 #include <kernel/power.h>
 #include <kernel/drivers/input/keyboard_ps2.h>
@@ -68,7 +69,7 @@ static int lex_panel_create(int x, int y, int w, int h, uint32_t color, uint32_t
     return 1;
 }
 
-static int lex_label_create(int x, int y, uint32_t color, const char* text, uint8_t anchor) {
+static int lex_label_create_ex(int x, int y, uint32_t color, const char* text, uint8_t anchor, uint8_t font_size) {
     window_t* win = wm_get_active_window();
     if (!win) return -1;
     if (win->label_count >= MAX_LABELS) return -1;
@@ -78,11 +79,23 @@ static int lex_label_create(int x, int y, uint32_t color, const char* text, uint
     l->init_x = x; l->init_y = y;
     l->init_win_w = win->width; l->init_win_h = win->height;
     
+    // Font boyutunu ata (0 gelirse varsayılan 14px yap)
+    l->font_size = (font_size > 0) ? font_size : 14;
+    
     int i = 0;
     while (text[i] != '\0' && i < 63) { l->text[i] = text[i]; i++; }
     l->text[i] = '\0';
 
+    // Pencereyi hemen tazele ki etiket anında görünsün
+    damage_union_rect(win->x, win->y, win->width, win->height);
+    wm_draw_window(win);
+    desktop_redraw();
+
     return 1;
+}
+
+static int lex_label_create(int x, int y, uint32_t color, const char* text, uint8_t anchor) {
+    return lex_label_create_ex(x, y, color, text, anchor, 14);
 }
 
 static int lex_button_create(int x, int y, int w, int h, uint32_t bg_color, uint32_t text_color, const char* text, void (*on_click)(void), uint8_t anchor) {
@@ -690,6 +703,7 @@ static void lex_install_api(void) {
     api->print = lex_print;
     api->exit = lex_exit;
     api->label_create = lex_label_create;
+    api->label_create_ex = lex_label_create_ex;
     api->panel_create = lex_panel_create;
     api->button_create = lex_button_create;
     api->picturebox_create = lex_picturebox_create;
@@ -784,6 +798,7 @@ bool lex2_load_and_run(const char* path) {
         damage_union_rect(win->x, win->y, win->width, win->height);
         wm_draw_window(win);
         desktop_redraw();
+        fb_swap();
     }
 
     serial_write("LEXV2: Application returned.\n");

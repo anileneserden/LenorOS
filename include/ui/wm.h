@@ -35,6 +35,7 @@ typedef struct {
     uint8_t anchor;
     int init_x, init_y;
     int init_win_w, init_win_h;
+    uint8_t font_size;
 } label_item_t;
 
 typedef struct {

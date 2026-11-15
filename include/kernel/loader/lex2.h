@@ -41,6 +41,7 @@ typedef struct {
     void (*print)(const char* str);
     void (*exit)(void);
     int (*label_create)(int x, int y, uint32_t color, const char* text, uint8_t anchor);
+    int (*label_create_ex)(int x, int y, uint32_t color, const char* text, uint8_t anchor, uint8_t font_size); // <-- BURAYA EKLENDİ
     int (*panel_create)(int x, int y, int w, int h, uint32_t color, uint32_t hover_color, void (*on_click)(void), void (*on_hover)(void), uint8_t anchor);
     int (*button_create)(int x, int y, int w, int h, uint32_t bg_color, uint32_t text_color, const char* text, void (*on_click)(void), uint8_t anchor);
     int (*picturebox_create)(int x, int y, int w, int h, const char* img_path, uint8_t anchor, int size_mode);

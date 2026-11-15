@@ -11,6 +11,7 @@
 extern int32_t mouse_x;
 extern int32_t mouse_y;
 extern uint8_t mouse_buttons;
+extern int system_font_id;
 
 #define WM_TITLEBAR_HEIGHT 24
 #define RESIZE_BORDER 6
@@ -326,11 +327,15 @@ void wm_draw_window(window_t* win) {
     // 6. Draw labels
     for (int i = 0; i < win->label_count; i++) {
         label_item_t* l = &win->labels[i];
-        int rel_x = l->x;
-        int rel_y = 24 + l->y;
+        
+        int screen_x = win->x + l->x;
+        int screen_y = win->y + WM_TITLEBAR_HEIGHT + l->y; 
 
-        if (rel_x >= 0 && rel_x < win->width && rel_y >= 24 && rel_y < win->height) {
-            gfx_draw_text_utf8(win->x + rel_x, win->y + rel_y, l->color, l->text);
+        if (system_font_id >= 0) {
+            float fsize = (l->font_size > 0) ? (float)l->font_size : 14.0f;
+            ttf_set_font_size(system_font_id, fsize);
+            
+            ttf_draw_text(system_font_id, screen_x, screen_y, l->color, l->text);
         }
     }
 

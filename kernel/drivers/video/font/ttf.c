@@ -65,19 +65,53 @@ typedef struct {
 
 static LoadedFont loaded_fonts[MAX_LOADED_FONTS];
 
-// Arka plan rengiyle metin rengini alpha değerine göre pürüzsüzce harmanlar
+/* UTF-8 kod noktasını (codepoint) doğru okuyan yardımcı fonksiyon */
+static uint32_t ttf_utf8_next(const char** s_ptr) {
+    const uint8_t* s = (const uint8_t*)*s_ptr;
+    if (!s || !*s) return 0;
+
+    uint32_t cp = 0;
+    int bytes = 0;
+
+    if (*s < 0x80) {
+        cp = *s;
+        bytes = 1;
+    } else if ((*s & 0xE0) == 0xC0) {
+        cp = *s & 0x1F;
+        bytes = 2;
+    } else if ((*s & 0xF0) == 0xE0) {
+        cp = *s & 0x0F;
+        bytes = 3;
+    } else if ((*s & 0xF8) == 0xF0) {
+        cp = *s & 0x07;
+        bytes = 4;
+    } else {
+        (*s_ptr)++;
+        return '?';
+    }
+
+    for (int i = 1; i < bytes; i++) {
+        if ((s[i] & 0xC0) != 0x80) break;
+        cp = (cp << 6) | (s[i] & 0x3F);
+    }
+
+    *s_ptr += bytes;
+    return cp;
+}
+
 static void ttf_draw_pixel_alpha(int x, int y, uint32_t fg_color, uint8_t alpha) {
     if (alpha == 0) return;
+    
+    // Ekran sınırları dışına taşmayı önle
+    if (x < 0 || y < 0 || x >= (int)fb_get_width() || y >= (int)fb_get_height()) return;
+
     if (alpha == 255) {
-        fb_putpixel(x, y, fg_color);
+        gfx_putpixel(x, y, fg_color); 
         return;
     }
 
-    // Doğrudan framebuffer'ın o koordinattaki mevcut rengini alıyoruz
-    // (Eğer fonksiyonunun adı farklıysa, örneğin fb_get_pixel ise onu yazabilirsin)
-    uint32_t bg_color = fb_getpixel(x, y); 
+    uint32_t bg_color = gfx_getpixel(x, y); 
 
-    // RGB bileşenlerini ayır
     uint32_t bg_r = (bg_color >> 16) & 0xFF;
     uint32_t bg_g = (bg_color >> 8) & 0xFF;
     uint32_t bg_b = bg_color & 0xFF;
@@ -86,13 +120,12 @@ static void ttf_draw_pixel_alpha(int x, int y, uint32_t fg_color, uint8_t alpha)
     uint32_t fg_g = (fg_color >> 8) & 0xFF;
     uint32_t fg_b = fg_color & 0xFF;
 
-    // Alpha blending formülü (0-255 aralığı için en hızlı ve hassas yaklaşım)
     uint32_t r = (fg_r * alpha + bg_r * (255 - alpha)) / 255;
     uint32_t g = (fg_g * alpha + bg_g * (255 - alpha)) / 255;
     uint32_t b = (fg_b * alpha + bg_b * (255 - alpha)) / 255;
 
     uint32_t blended_color = (0xFF << 24) | (r << 16) | (g << 8) | b;
-    fb_putpixel(x, y, blended_color);
+    gfx_putpixel(x, y, blended_color);
 }
 
 int ttf_load_font(const char* filepath) {
@@ -138,19 +171,20 @@ void ttf_set_font_size(int font_id, float pixels_height) {
     loaded_fonts[font_id].font_size = pixels_height;
 }
 
-void ttf_draw_char(int font_id, int x, int y, uint32_t color, char c) {
+void ttf_draw_char(int font_id, int x, int y, uint32_t color, uint32_t codepoint) {
     if (font_id < 0 || font_id >= MAX_LOADED_FONTS || !loaded_fonts[font_id].active) return;
 
     LoadedFont* font = &loaded_fonts[font_id];
-    float scale = stbtt_ScaleForPixelHeight(&font->font_info, font->font_size);
+    float fsize = (font->font_size > 0.0f) ? font->font_size : 16.0f;
+    float scale = stbtt_ScaleForPixelHeight(&font->font_info, fsize);
 
     int w, h, xoff, yoff;
-    unsigned char* bitmap = stbtt_GetCodepointBitmap(&font->font_info, 0, scale, c, &w, &h, &xoff, &yoff);
+    unsigned char* bitmap = stbtt_GetCodepointBitmap(&font->font_info, 0, scale, (int)codepoint, &w, &h, &xoff, &yoff);
 
     if (!bitmap) return; 
 
-    int ascent;
-    stbtt_GetFontVMetrics(&font->font_info, &ascent, 0, 0);
+    int ascent, descent, lineGap;
+    stbtt_GetFontVMetrics(&font->font_info, &ascent, &descent, &lineGap);
     int baseline = (int)(ascent * scale);
 
     for (int j = 0; j < h; j++) {
@@ -170,24 +204,40 @@ void ttf_draw_char(int font_id, int x, int y, uint32_t color, char c) {
 
 void ttf_draw_text(int font_id, int x, int y, uint32_t color, const char* text) {
     if (font_id < 0 || font_id >= MAX_LOADED_FONTS || !loaded_fonts[font_id].active) return;
+    if (!text) return;
 
     LoadedFont* font = &loaded_fonts[font_id];
-    float scale = stbtt_ScaleForPixelHeight(&font->font_info, font->font_size);
+    float fsize = (font->font_size > 0.0f) ? font->font_size : 16.0f;
+    float scale = stbtt_ScaleForPixelHeight(&font->font_info, fsize);
     
     int cur_x = x;
+    const char* ptr = text;
 
-    for (int i = 0; text[i] != '\0'; i++) {
-        char c = text[i];
-        if (c == '\n') {
+    while (*ptr != '\0') {
+        uint32_t cp = ttf_utf8_next(&ptr);
+        if (cp == 0) break;
+
+        if (cp == '\n') {
             cur_x = x;
-            y += (int)(font->font_size * 1.2f);
+            y += (int)(fsize * 1.2f);
             continue;
         }
 
-        ttf_draw_char(font_id, cur_x, y, color, c);
+        // Karakteri çiz
+        ttf_draw_char(font_id, cur_x, y, color, cp);
 
-        int advance, lsb;
-        stbtt_GetCodepointHMetrics(&font->font_info, c, &advance, &lsb);
-        cur_x += (int)(advance * scale);
+        // Yatay ilerleme (Advance) miktarını güvenli şekilde hesapla
+        int advance = 0, lsb = 0;
+        int glyph_index = stbtt_FindGlyphIndex(&font->font_info, (int)cp);
+        stbtt_GetGlyphHMetrics(&font->font_info, glyph_index, &advance, &lsb);
+
+        int pixel_advance = (int)(advance * scale);
+        
+        // Eğer font metrikten genişlik alamazsa (0 veya negatif dönerse) karakter boyutuna göre emniyet payı bırak
+        if (pixel_advance <= 0) {
+            pixel_advance = (int)(fsize * 0.55f); 
+        }
+
+        cur_x += pixel_advance;
     }
 }
