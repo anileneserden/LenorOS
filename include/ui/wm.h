@@ -123,6 +123,9 @@ typedef struct {
     int drag_offset_x;
     int drag_offset_y;
 
+    bool is_maximized;
+    int prev_x, prev_y, prev_width, prev_height;
+
     int init_win_w;
     int init_win_h;
 
