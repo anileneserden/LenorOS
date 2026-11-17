@@ -49,6 +49,8 @@ static int resize_old_h = 0;
 static uint32_t last_click_time = 0;
 static window_t* last_clicked_win = 0;
 static uint32_t global_wm_ticks = 0;
+static label_item_t* selecting_label = 0;
+static char clipboard_buffer[256] = {0};
 
 void wm_init(void) {
     window_count = 0;
@@ -366,7 +368,10 @@ void wm_draw_window(window_t* win) {
     } else {
         // Normal pencere başlığı metni
         if (win->width > 120) {
-            gfx_draw_text_utf8(win->x + 8, win->y + 6, 0xFFFFFFFF, win->title);
+            if (system_font_id >= 0) {
+                ttf_set_font_size(system_font_id, 13.0f);
+                ttf_draw_text(system_font_id, win->x + 8, win->y + 5, 0xFFFFFFFF, win->title);
+            }
         }
     }
 
@@ -406,6 +411,20 @@ void wm_draw_window(window_t* win) {
         
         int screen_x = win->x + l->x;
         int screen_y = win->y + WM_TITLEBAR_HEIGHT + l->y; 
+
+        // Eğer bu etiket seçilebilirse ve seçilmiş bir aralık varsa arkasına mavi vurgu çiz
+        if (l->selectable && l->sel_start != -1 && l->sel_end != -1 && l->sel_start != l->sel_end) {
+            int s = l->sel_start;
+            int e = l->sel_end;
+            if (s > e) { int tmp = s; s = e; e = tmp; } // Ters seçim koruması
+
+            int char_w = 8;
+            int highlight_x = screen_x + (s * char_w);
+            int highlight_w = (e - s) * char_w;
+            int highlight_h = (l->font_size > 0) ? l->font_size + 2 : 16;
+
+            gfx_fill_rect(highlight_x, screen_y, highlight_w, highlight_h, 0xFF3399FF); // Mavi vurgu rengi
+        }
 
         if (system_font_id >= 0) {
             float fsize = (l->font_size > 0) ? (float)l->font_size : 14.0f;
@@ -905,6 +924,26 @@ static void wm_update_cursor(void) {
             }
         }
     }
+   
+    // 4. Seçilebilir HTML etiketlerini kontrol et (I-Beam / Metin İmleci)
+    if (new_cursor == CURSOR_ARROW) {
+        for (int i = 0; i < win->label_count; i++) {
+            label_item_t* l = &win->labels[i];
+            if (!l->selectable) continue;
+
+            int abs_x = win->x + l->x;
+            int abs_y = win->y + WM_TITLEBAR_HEIGHT + l->y;
+            int char_w = 8; // Ortalama karakter genişliği
+            int text_w = strlen(l->text) * char_w;
+            int text_h = (l->font_size > 0) ? l->font_size + 4 : 18;
+
+            if (mouse_x >= abs_x && mouse_x < abs_x + text_w &&
+                mouse_y >= abs_y && mouse_y < abs_y + text_h) {
+                new_cursor = CURSOR_IBEAM;
+                break;
+            }
+        }
+    }
 
     // İmleç türünü sistem genelinde güncelle
     cursor_set_type(new_cursor);
@@ -1130,6 +1169,36 @@ void wm_process_input(void) {
             // Eğer ne bir butona, ne bir inputa ne de bir combobox'a tıklandıysa aktif inputu sıfırla
             if (!clicked_on_input && !clicked_on_button && !clicked_on_combobox) {
                 active_input = 0; 
+            }
+
+            selecting_label = 0;
+            for (int i = 0; i < target->label_count; i++) {
+                target->labels[i].sel_start = -1;
+                target->labels[i].sel_end = -1;
+            }
+
+            for (int i = 0; i < target->label_count; i++) {
+                label_item_t* l = &target->labels[i];
+                if (!l->selectable) continue;
+
+                int abs_x = target->x + l->x;
+                int abs_y = target->y + WM_TITLEBAR_HEIGHT + l->y;
+                int char_w = 8; // Ortalama karakter genişliği
+                int text_w = strlen(l->text) * char_w;
+                int text_h = (l->font_size > 0) ? l->font_size + 4 : 18;
+
+                if (mouse_x >= abs_x && mouse_x <= abs_x + text_w &&
+                    mouse_y >= abs_y && mouse_y <= abs_y + text_h) {
+                    
+                    int char_idx = (mouse_x - abs_x) / char_w;
+                    int len = strlen(l->text);
+                    if (char_idx > len) char_idx = len;
+
+                    selecting_label = l;
+                    l->sel_start = char_idx;
+                    l->sel_end = char_idx;
+                    break;
+                }
             }
 
             // --- SEKME TIKLAMA KONTROLÜ ---

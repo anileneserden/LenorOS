@@ -442,6 +442,7 @@ static uint32_t parse_inline_style(const char* tag_str, uint32_t default_color) 
 }
 
 // Aktif penceredeki browser bileşenine HTML içeriği yükler ve parse eder
+// Aktif penceredeki browser bileşenine HTML içeriği yükler ve parse eder
 void lex_browser_load_html(const char* html) {
     window_t* win = wm_get_active_window();
     if (!win || !html) return;
@@ -523,6 +524,9 @@ void lex_browser_load_html(const char* html) {
                     l->init_x = cell_x; l->init_y = current_y;
                     l->init_win_w = win->width; l->init_win_h = win->height;
                     strcpy(l->text, cell_buf);
+                    l->selectable = true;
+                    l->sel_start = -1;
+                    l->sel_end = -1;
                 }
                 col_index++;
                 
@@ -558,6 +562,9 @@ void lex_browser_load_html(const char* html) {
                     l->init_x = link_x; l->init_y = current_y;
                     l->init_win_w = win->width; l->init_win_h = win->height;
                     strcpy(l->text, text_buf);
+                    l->selectable = true;
+                    l->sel_start = -1;
+                    l->sel_end = -1;
                 }
 
                 // Pencere yöneticisinin el imleci (hand cursor) algılaması için linki kaydet
@@ -591,6 +598,9 @@ void lex_browser_load_html(const char* html) {
                     l->init_x = 30; l->init_y = current_y;
                     l->init_win_w = win->width; l->init_win_h = win->height;
                     strcpy(l->text, buf);
+                    l->selectable = true;
+                    l->sel_start = -1;
+                    l->sel_end = -1;
                 }
                 current_y += 35;
                 if (starts_with(ptr, "</h1>") || starts_with(ptr, "</H1>")) ptr += 5;
@@ -619,6 +629,9 @@ void lex_browser_load_html(const char* html) {
                     l->init_x = 30; l->init_y = current_y;
                     l->init_win_w = win->width; l->init_win_h = win->height;
                     strcpy(l->text, buf);
+                    l->selectable = true;
+                    l->sel_start = -1;
+                    l->sel_end = -1;
                 }
                 current_y += 25;
                 if (starts_with(ptr, "</p>") || starts_with(ptr, "</P>")) ptr += 4;
@@ -640,6 +653,9 @@ void lex_browser_load_html(const char* html) {
                         l->init_x = 30; l->init_y = current_y;
                         l->init_win_w = win->width; l->init_win_h = win->height;
                         strcpy(l->text, text_buf);
+                        l->selectable = true;
+                        l->sel_start = -1;
+                        l->sel_end = -1;
                     }
                     current_y += 22;
                 }

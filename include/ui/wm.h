@@ -36,6 +36,9 @@ typedef struct {
     int init_x, init_y;
     int init_win_w, init_win_h;
     uint8_t font_size;
+    bool selectable;
+    int sel_start;
+    int sel_end;
 } label_item_t;
 
 typedef struct {
