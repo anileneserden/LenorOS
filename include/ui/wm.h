@@ -112,6 +112,8 @@ typedef struct {
     int x, y, width, height;
     char href[128];
     char text[64];
+    bool is_visited;
+    uint32_t color;
 } browser_link_t;
 
 typedef struct {

@@ -981,6 +981,22 @@ void wm_process_input(void) {
 
     // 1. If the left button was released, dragging or resizing must end.
     if (!left_pressed) {
+        // --- TIKLANAN LİNK RENGİNİ ESKİ HALİNE DÖNDÜR ---
+        // Sol tık bırakıldığında mor/lita yapılan linkleri tekrar orijinal mavi rengine (0xFF007ACC) çevir    
+        for (int i = 0; i < window_count; i++) {
+            window_t* win = &window_list[i];
+            if (win->width > 0) {
+                for (int l_idx = 0; l_idx < win->label_count; l_idx++) {
+                    if (win->labels[l_idx].color == 0xFF9400D3) {
+                        win->labels[l_idx].color = 0xFF007ACC;
+                        damage_union_rect(win->x, win->y, win->width, win->height);
+                        desktop_redraw();
+                    }
+                }
+            }
+        }
+        // ------------------------------------------------
+
         if (dragged_window || resized_window) {
             cursor_prepare_redraw();
             if (dragged_window) {
@@ -1198,6 +1214,37 @@ void wm_process_input(void) {
                     l->sel_start = char_idx;
                     l->sel_end = char_idx;
                     break;
+                }
+            }
+
+            // --- TARAYICI LİNK TIKLAMA KONTROLÜ ---
+            bool clicked_on_link = false;
+            if (target->link_count > 0) {
+                for (int i = 0; i < target->link_count; i++) {
+                    browser_link_t* lnk = &target->links[i];
+
+                    int abs_lx = target->x + lnk->x;
+                    int abs_ly = target->y + WM_TITLEBAR_HEIGHT + lnk->y;
+                    int lw = lnk->width > 0 ? lnk->width : 100;
+                    int lh = lnk->height > 0 ? lnk->height : 18;
+
+                    if (mouse_x >= abs_lx && mouse_x < abs_lx + lw &&
+                        mouse_y >= abs_ly && mouse_y < abs_ly + lh) {
+                        
+                        serial_write("WM: Link tiklandi -> ");
+                        serial_write(lnk->href);
+                        serial_write("\n");
+
+                        // Tiklanan linke ait metni ve etiket rengini güncelle (Örn: Mor/Lila renk: 0xFF9400D3)
+                        for (int l_idx = 0; l_idx < target->label_count; l_idx++) {
+                            if (strcmp(target->labels[l_idx].text, lnk->text) == 0) {
+                                target->labels[l_idx].color = 0xFF9400D3;
+                            }
+                        }
+
+                        clicked_on_link = true;
+                        break;
+                    }
                 }
             }
 

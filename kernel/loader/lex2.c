@@ -442,7 +442,6 @@ static uint32_t parse_inline_style(const char* tag_str, uint32_t default_color) 
 }
 
 // Aktif penceredeki browser bileşenine HTML içeriği yükler ve parse eder
-// Aktif penceredeki browser bileşenine HTML içeriği yükler ve parse eder
 void lex_browser_load_html(const char* html) {
     window_t* win = wm_get_active_window();
     if (!win || !html) return;
