@@ -173,7 +173,7 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     app_manager_init();
     fb_swap();
 
-    if (lex2_load_and_run("C:/Program Files/html-parser/html-parser.lex")) {
+    if (lex2_load_and_run("C:/Lenor/System32/cmd.lex")) {
         serial_write("html-parser uygulamasi basariyla calistirildi!\n");
     } else {
         serial_write("HATA: html-parser uygulamasi yuklenemedi!\n");

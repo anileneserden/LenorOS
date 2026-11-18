@@ -558,38 +558,31 @@ void wm_draw_window(window_t* win) {
                     gfx_fill_rect(abs_x + iw - inp->border_thickness, abs_y, inp->border_thickness, ih, inp->border_color);
                 }
 
+                // TTF Font Ayarı (Etiketlerle aynı standart boyut: 14.0f)
+                if (system_font_id >= 0) {
+                    ttf_set_font_size(system_font_id, 14.0f);
+                }
+
+                int text_draw_y = abs_y + 4; // Dikey ortalama için offset
+
                 if (inp->text[0] != '\0') {
-                    int current_y = abs_y + 6;
-                    int line_height = 16; // Her satır arasındaki piksel mesafesi
-                    char line_buf[128];
-                    int l_idx = 0;
-
-                    for (int k = 0; inp->text[k] != '\0'; k++) {
-                        if (inp->text[k] == '\n') {
-                            line_buf[l_idx] = '\0';
-                            gfx_draw_text_utf8(abs_x + 6, current_y, inp->text_color, line_buf);
-                            current_y += line_height;
-                            l_idx = 0;
-                        } else {
-                            if (l_idx < 127) {
-                                line_buf[l_idx++] = inp->text[k];
-                            }
-                        }
+                    // Etiketlerde kullanılan ttf_draw_text fonksiyonu ve doğru parametre sırası
+                    if (system_font_id >= 0) {
+                        ttf_draw_text(system_font_id, abs_x + 4, text_draw_y, inp->text_color, inp->text);
                     }
-                    // Son satırı çiz
-                    line_buf[l_idx] = '\0';
-                    gfx_draw_text_utf8(abs_x + 6, current_y, inp->text_color, line_buf);
-
                 } else if (inp->placeholder[0] != '\0') {
-                    gfx_draw_text_utf8(abs_x + 6, abs_y + 6, inp->placeholder_color, inp->placeholder);
+                    if (system_font_id >= 0) {
+                        ttf_draw_text(system_font_id, abs_x + 4, text_draw_y, inp->placeholder_color, inp->placeholder);
+                    }
                 }
 
                 if (active_input == inp) {
                     int text_len = 0;
                     while(inp->text[text_len] != '\0') text_len++;
-                    int cursor_pos_x = abs_x + 6 + (text_len * 8);
+                    // TTF harf genişliği ortalaması (~8 piksel)
+                    int cursor_pos_x = abs_x + 4 + (text_len * 8); 
                     if (cursor_pos_x < abs_x + iw - 8) {
-                        gfx_fill_rect(cursor_pos_x, abs_y + 6, 2, ih - 12, inp->text_color);
+                        gfx_fill_rect(cursor_pos_x, abs_y + 4, 2, ih - 8, inp->text_color);
                     }
                 }
             }
@@ -1688,7 +1681,34 @@ void wm_process_input(void) {
 }
 
 void wm_handle_key_press(char c) {
-    if (!active_input) return;
+    // --- 1. KESİN AKTİF PENCERE VE ODAK KONTROLÜ ---
+    // Eğer ortada aktif bir pencere yoksa, pencere kapalıysa veya 
+    // kullanıcı o pencereye tıklayıp odaklanmadıysa (is_active = false) tuşları işleme!
+    if (!active_window || active_window->width == 0 || !active_window->is_active) {
+        return;
+    }
+
+    // --- 0. KESİN ENTER FİLTRESİ ---
+    if (c == '\n' || c == '\r' || c == 10 || c == 13) {
+        if (active_input && active_input->on_key) {
+            active_input->on_key(c);
+        } else if (active_window->on_key) {
+            active_window->on_key(c);
+        }
+        return;
+    }
+
+    // Eğer odaklı bir textbox YOKSA, tuşları aktif pencerenin geneline ilet
+    if (!active_input) {
+        if (active_window->on_key) {
+            active_window->on_key(c);
+        }
+        
+        serial_write("[WM] Pencere genelinde tus alindi: ");
+        serial_write_hex8((uint8_t)c);
+        serial_write("\n");
+        return;
+    }
 
     int len = 0;
     while (active_input->text[len] != '\0') len++;

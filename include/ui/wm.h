@@ -69,6 +69,8 @@ typedef struct {
     
     int init_x, init_y, init_width, init_height;
     int init_win_w, init_win_h;
+
+    void (*on_key)(char c);
 } text_input_t;
 
 typedef struct {
@@ -169,6 +171,8 @@ typedef struct {
     int canvas_w, canvas_h;
     uint32_t* canvas_buffer;
     uint8_t canvas_anchor;
+
+    void (*on_key)(char c);
 } window_t;
 
 void wm_init(void);

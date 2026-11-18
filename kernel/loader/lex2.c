@@ -240,7 +240,7 @@ static int lex_input_create(int x, int y, int w, int h,
                             uint32_t backcolor, uint32_t color, 
                             uint32_t placeholder_color, uint32_t border_color, 
                             int border_thickness, void (*on_key)(char c), uint8_t anchor) {
-    (void)on_key;
+    
     window_t* win = wm_get_active_window();
     if (!win) return -1;
     if (win->input_count >= MAX_INPUTS) return -1;
@@ -253,6 +253,10 @@ static int lex_input_create(int x, int y, int w, int h,
     inp->border_color = border_color;
     inp->border_thickness = border_thickness;
     inp->anchor = anchor;
+    
+    // Callback fonksiyonunu yapıya kaydediyoruz!
+    inp->on_key = on_key; 
+
     inp->init_x = x; inp->init_y = y; 
     inp->init_width = w; inp->init_height = h;
     inp->init_win_w = win->width; inp->init_win_h = win->height;
@@ -328,7 +332,10 @@ static size_t lex_strlen(const char* str) {
 
 static void lex_yield(void) {
     wm_process_input();
-    __asm__ volatile("pause");
+    // İşlemciyi ve USB input kuyruğunu boğmamak için kısa bir döngü veya bekleme
+    for(volatile int i = 0; i < 10000; i++) {
+        __asm__ volatile("pause");
+    }
 }
 
 static uint32_t* lex_canvas_create(int x, int y, int w, int h, uint8_t anchor, int* out_canvas_id) {
