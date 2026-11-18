@@ -1,5 +1,4 @@
 #include <kernel/drivers/input/keyboard_usb.h>
-#include <kernel/drivers/input/keyboard_ps2.h>
 #include <kernel/serial.h>
 #include <stdbool.h>
 

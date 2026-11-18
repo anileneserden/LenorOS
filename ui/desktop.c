@@ -12,7 +12,7 @@
 #include <kernel/fs/vfs.h>
 #include <kernel/drivers/video/fb.h>
 #include <kernel/drivers/video/gfx.h>
-#include <kernel/drivers/input/keyboard_ps2.h>
+#include <kernel/drivers/input/keyboard_usb.h>
 #include <arch/x86/io.h>
 #include <kernel/power.h>
 #include <kernel/drivers/rtc.h>
