@@ -241,3 +241,41 @@ void ttf_draw_text(int font_id, int x, int y, uint32_t color, const char* text) 
         cur_x += pixel_advance;
     }
 }
+
+int ttf_get_text_width(int font_id, const char* text) {
+    if (font_id < 0 || font_id >= MAX_LOADED_FONTS || !loaded_fonts[font_id].active) return 0;
+    if (!text) return 0;
+
+    LoadedFont* font = &loaded_fonts[font_id];
+    float fsize = (font->font_size > 0.0f) ? font->font_size : 16.0f;
+    float scale = stbtt_ScaleForPixelHeight(&font->font_info, fsize);
+
+    int cur_x = 0;
+    int max_width = 0;
+    const char* ptr = text;
+
+    while (*ptr != '\0') {
+        uint32_t cp = ttf_utf8_next(&ptr);
+        if (cp == 0) break;
+
+        if (cp == '\n') {
+            if (cur_x > max_width) max_width = cur_x;
+            cur_x = 0;
+            continue;
+        }
+
+        int advance = 0, lsb = 0;
+        int glyph_index = stbtt_FindGlyphIndex(&font->font_info, (int)cp);
+        stbtt_GetGlyphHMetrics(&font->font_info, glyph_index, &advance, &lsb);
+
+        int pixel_advance = (int)(advance * scale);
+        if (pixel_advance <= 0) {
+            pixel_advance = (int)(fsize * 0.55f);
+        }
+
+        cur_x += pixel_advance;
+    }
+
+    if (cur_x > max_width) max_width = cur_x;
+    return max_width;
+}
