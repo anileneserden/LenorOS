@@ -494,6 +494,8 @@ void desktop_init(void) {
 }
 
 void desktop_process_input(void) {
+    desktop_icons_tick();
+
     static bool super_key_held = false;
 
     // --- KLAVYE KISAYOL KONTROLÜ (SUPER + R -> RUN UYGULAMASI) ---
@@ -555,7 +557,7 @@ void desktop_process_input(void) {
     int screen_h = fb_get_height();
     int taskbar_y = screen_h - 36;
 
-    // 3. Left Click Check (Detection of clicks on start button, menu, right-click menu and shutdown button)
+    // 3. Left Click Check (Detection of clicks on start button, menu, icons, right-click menu and shutdown button)
     bool current_mouse_left = (mouse_buttons & 1);
     if (current_mouse_left && !prev_mouse_left) {
         int btn_x = 4;
@@ -573,6 +575,7 @@ void desktop_process_input(void) {
         else if (new_x >= btn_x && new_x <= btn_x + btn_w &&
                  new_y >= btn_y && new_y <= btn_y + btn_h) {
             start_menu_open = !start_menu_open;
+            wifi_menu_open = false;
 
             // Mark the entire screen as damaged and trigger a redraw since the menu will open/close
             damage_union_rect(0, 0, screen_w, screen_h);
@@ -636,6 +639,12 @@ void desktop_process_input(void) {
                     damage_union_rect(0, 0, screen_w, screen_h);
                     desktop_redraw();
                 }
+            } else if (new_y < taskbar_y && !wm_find_at(new_x, new_y) &&
+                       desktop_icons_handle_click(new_x, new_y)) {
+                start_menu_open = false;
+                wifi_menu_open = false;
+                damage_union_rect(0, 0, screen_w, screen_h);
+                desktop_redraw();
             }
         }
     }

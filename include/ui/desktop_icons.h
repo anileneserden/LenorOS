@@ -8,5 +8,7 @@ void desktop_icons_init(void);
 void desktop_icons_refresh(void);
 void desktop_icons_draw(int32_t mx, int32_t my, bool click_started);
 int desktop_icons_get_selected(void);
+void desktop_icons_tick(void);
+bool desktop_icons_handle_click(int32_t mx, int32_t my);
 
 #endif
