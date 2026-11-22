@@ -1,5 +1,6 @@
 #include <kernel/fs/lnrfs.h>
 #include <kernel/fs/vfs.h>
+#include <kernel/storage/mbr.h>
 #include <kernel/drivers/storage/ata.h>
 #include <kernel/serial.h>
 #include <kernel/mem/heap.h>
@@ -10,11 +11,17 @@
 
 static lnrfs_superblock_t sb_cache;
 static int lnrfs_is_mounted = 0;
-static uint32_t lnrfs_partition_lba_offset = 0; // MBR'den gelen sda2 başlangıç LBA offset değeri
+static uint32_t lnrfs_partition_lba_offset = 0; // MBR'den gelen LNRFS başlangıç LBA offset değeri
+static uint8_t lnrfs_drive = 0;                 // MBR taramasında bulunan ATA drive indeksi
 
 int lnrfs_mount_at_offset(uint32_t lba_offset) {
     serial_write("[LNRFS] Mounting process is starting (with MBR offset)...\n");
     lnrfs_partition_lba_offset = lba_offset;
+    lnrfs_drive = mbr_get_lnrfs_drive();
+
+    serial_write("[LNRFS] Using ATA drive: ");
+    serial_write_dec(lnrfs_drive);
+    serial_write("\n");
 
     uint8_t* sector_buffer = (uint8_t*)kmalloc(512);
     if (!sector_buffer) {
@@ -22,15 +29,25 @@ int lnrfs_mount_at_offset(uint32_t lba_offset) {
         return -1;
     }
 
-    // MBR partition offset (sda2 başlangıcı) üzerine lnrfs_superblock_t okunuyor
-    ata_read_sectors(0, lnrfs_partition_lba_offset, 1, sector_buffer);
+    // MBR partition offset üzerine lnrfs_superblock_t okunuyor
+    ata_read_sectors(lnrfs_drive, lnrfs_partition_lba_offset, 1, sector_buffer);
 
     // Copy the read data to the cache structure.
     memcpy(&sb_cache, sector_buffer, sizeof(lnrfs_superblock_t));
+
+    serial_write("[LNRFS DEBUG] magic=0x");
+    serial_write_hex(sb_cache.magic);
+    serial_write(" bytes=");
+    for (int b = 0; b < 16; b++) {
+        serial_write_hex8(sector_buffer[b]);
+        serial_write(" ");
+    }
+    serial_write("\n");
+
     kfree(sector_buffer); // Releasing it to prevent a memory leak.
 
-    // Magic Number check ('LNRF' -> 0x4C4E5246)
-    if (sb_cache.magic != 0x4C4E5246) {
+    // Magic Number check ('LNRF' -> 0x4C4E5246 veya 'FRNL' -> 0x46524E4C)
+    if (sb_cache.magic != 0x4C4E5246 && sb_cache.magic != 0x46524E4C) {
         serial_write("[LNRFS ERROR] Invalid file system signature (Magic mismatch)!\n");
         return -1;
     }
@@ -87,7 +104,7 @@ int lnrfs_find_inode(const char* filename, lnrfs_inode_t* out_inode) {
     }
 
     // Read the entire inode table at once (Partition offset eklendi)
-    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
+    ata_read_sectors(lnrfs_drive, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     int found = -1;
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
@@ -190,7 +207,7 @@ void* lnrfs_read_file(const char* filename, uint32_t* out_size) {
     uint32_t bytes_read = 0;
     for (uint32_t i = 0; i < sectors_needed; i++) {
         // Partition offset hesaba katılarak veri sektörü okunuyor
-        ata_read_sectors(0, lnrfs_partition_lba_offset + start_lba + i, 1, sector_sec);
+        ata_read_sectors(lnrfs_drive, lnrfs_partition_lba_offset + start_lba + i, 1, sector_sec);
         
         uint32_t copy_len = 512;
         if (bytes_read + copy_len > size) {
@@ -241,7 +258,7 @@ int lnrfs_get_dir_files(const char* rel_path, vfs_file_info_t* out_list, int max
     }
 
     // Partition offset ile inode tablosu okunuyor
-    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
+    ata_read_sectors(lnrfs_drive, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     int count = 0;
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
@@ -334,7 +351,7 @@ int lnrfs_create_file(const char* path) {
         return -1;
     }
 
-    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
+    ata_read_sectors(lnrfs_drive, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
     int free_slot = -1;
@@ -362,7 +379,7 @@ int lnrfs_create_file(const char* path) {
     new_inode->size = 0;
     new_inode->start_block = 0;
 
-    ata_write_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
+    ata_write_sectors(lnrfs_drive, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
     kfree(sector_buf);
 
     serial_write("[LNRFS] File created successfully: ");
@@ -389,7 +406,7 @@ int lnrfs_mkdir(const char* path) {
     uint8_t* sector_buf = (uint8_t*)kmalloc(total_buffer_size);
     if (!sector_buf) return -1;
 
-    ata_read_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
+    ata_read_sectors(lnrfs_drive, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
 
     uint32_t max_inodes = total_buffer_size / sizeof(lnrfs_inode_t);
     int free_slot = -1;
@@ -411,7 +428,7 @@ int lnrfs_mkdir(const char* path) {
         new_inode->is_directory = 1;
         new_inode->size = 0;
 
-        ata_write_sectors(0, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
+        ata_write_sectors(lnrfs_drive, lnrfs_partition_lba_offset + table_lba, inode_table_sectors, sector_buf);
         serial_write("[LNRFS] Directory created: ");
         serial_write((char*)path);
         serial_write("\n");
