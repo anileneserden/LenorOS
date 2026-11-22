@@ -130,6 +130,17 @@ static void menu_action_new_file(void* context) {
     }
 }
 
+extern int lex2_load_and_run(const char* path);
+extern void serial_write(const char* str);
+
+static void desktop_launch_run_dialog(void) {
+    if (lex2_load_and_run("C:/Lenor/System32/run.lex")) {
+        serial_write("[RUN] C:/Lenor/System32/run.lex baslatildi.\n");
+    } else {
+        serial_write("[RUN ERROR] C:/Lenor/System32/run.lex yuklenemedi!\n");
+    }
+}
+
 static void menu_action_close_window(void* context) {
     window_t* win = (window_t*)context;
     if (win) {
@@ -483,20 +494,28 @@ void desktop_init(void) {
 }
 
 void desktop_process_input(void) {
-    // --- KLAVYE KISAYOL KONTROLÜ (SUPER TUŞU -> BAŞLAT MENÜSÜ) ---
+    static bool super_key_held = false;
+
+    // --- KLAVYE KISAYOL KONTROLÜ (SUPER + R -> RUN UYGULAMASI) ---
     uint8_t scancode = keyboard_get_last_scancode();
-    if (scancode == 0x5B) { // 0x5B: Super / Windows tuşu
-        start_menu_open = !start_menu_open;
+    if (scancode == 0x5B || scancode == 0x5C) { // 0x5B: LGui, 0x5C: RGui
+        super_key_held = !super_key_held;
+        keyboard_clear_last_scancode();
+    } else if (scancode == 0x13 && super_key_held) { // 0x13: R tuşu (HID usage 0x15 -> 0x13)
+        super_key_held = false;
+        start_menu_open = false;
+        wifi_menu_open = false;
+
+        keyboard_clear_last_scancode();
+        desktop_launch_run_dialog();
 
         int screen_w = fb_get_width();
         int screen_h = fb_get_height();
         damage_union_rect(0, 0, screen_w, screen_h);
         desktop_redraw();
-
-        keyboard_clear_last_scancode(); // Tuşun tekrar tetiklenmesini önle
     }
     // --- TEST: 1 TUŞU -> NORMAL OK İMLECİ (CURSOR_ARROW) ---
-    else if (scancode == 0x02) { 
+    else if (scancode == 0x02) {
         cursor_set_type(CURSOR_ARROW);
         serial_write("[TEST] 1 tusuna basildi -> CURSOR_ARROW zorlandi.\n");
 
@@ -508,7 +527,7 @@ void desktop_process_input(void) {
         keyboard_clear_last_scancode();
     }
     // --- TEST: 2 TUŞU -> EL İMLECİ (CURSOR_HAND) ---
-    else if (scancode == 0x03) { 
+    else if (scancode == 0x03) {
         cursor_set_type(CURSOR_HAND);
         serial_write("[TEST] 2 tusuna basildi -> CURSOR_HAND zorlandi.\n");
 
@@ -529,8 +548,8 @@ void desktop_process_input(void) {
 
     int new_x = cursor_get_x();
     int new_y = cursor_get_y();
-    int cursor_w = cursor_get_width();   
-    int cursor_h = cursor_get_height();  
+    int cursor_w = cursor_get_width();
+    int cursor_h = cursor_get_height();
 
     int screen_w = fb_get_width();
     int screen_h = fb_get_height();
@@ -554,7 +573,7 @@ void desktop_process_input(void) {
         else if (new_x >= btn_x && new_x <= btn_x + btn_w &&
                  new_y >= btn_y && new_y <= btn_y + btn_h) {
             start_menu_open = !start_menu_open;
-            
+
             // Mark the entire screen as damaged and trigger a redraw since the menu will open/close
             damage_union_rect(0, 0, screen_w, screen_h);
             desktop_redraw();
@@ -562,8 +581,8 @@ void desktop_process_input(void) {
         // --- BAŞLAT MENÜSÜ AÇIKKEN TIKLAMA KONTROLÜ ---
         else if (start_menu_open) {
             int menu_x = 4;
-            int menu_w = MENU_W; 
-            int menu_h = MENU_H; 
+            int menu_w = MENU_W;
+            int menu_h = MENU_H;
             int menu_y = taskbar_y - menu_h;
 
             // Shutdown button coordinates (Must be identical to the drawing)
@@ -625,15 +644,15 @@ void desktop_process_input(void) {
     // 4. --- RIGHT-CLICK CHECK ---
     bool current_mouse_right = (mouse_buttons & 0x02); // Bit 1 = Right Click
     if (current_mouse_right && !prev_mouse_right) {
-        
+
         // Farenin altında herhangi bir pencere var mı kontrol et
         window_t* clicked_window = wm_find_at(new_x, new_y);
 
         // A. PENCERE BAŞLIK ÇUĞUNA SAĞ TIKLANDIYSA
-        if (clicked_window && 
+        if (clicked_window &&
             new_y >= clicked_window->y && new_y < clicked_window->y + 24 &&
             new_x >= clicked_window->x && new_x <= clicked_window->x + clicked_window->width) {
-            
+
             start_menu_open = false;
 
             // Başlık çubuğu için dizi (array) tabanlı menü elemanları
@@ -655,19 +674,7 @@ void desktop_process_input(void) {
                 { "New File", menu_action_new_file }
             };
             menu_show(new_x, new_y, desktop_items, 2, NULL);
-// 5. If the cursor moved or actions occurred, mark relevant areas as damaged
-    if (old_x != new_x || old_y != new_y || scancode != 0) {
-        damage_union_rect(old_x, old_y, cursor_w, cursor_h);
-        damage_union_rect(new_x, new_y, cursor_w, cursor_h);
-        
-        if (menu_is_open()) {
-            damage_union_rect(new_x - 20, new_y - 20, 180, 120); 
-        }
 
-        damage_union_rect(10, 10, 240, 92);
-
-        desktop_redraw();
-    }
             damage_union_rect(0, 0, screen_w, screen_h);
             desktop_redraw();
         }
@@ -685,9 +692,9 @@ void desktop_process_input(void) {
     if (old_x != new_x || old_y != new_y || cursor_type_changed || scancode != 0) {
         damage_union_rect(old_x, old_y, cursor_w, cursor_h);
         damage_union_rect(new_x, new_y, cursor_w, cursor_h);
-        
+
         if (menu_is_open()) {
-            damage_union_rect(new_x - 20, new_y - 20, 180, 120); 
+            damage_union_rect(new_x - 20, new_y - 20, 180, 120);
         }
 
         damage_union_rect(10, 10, 240, 92);

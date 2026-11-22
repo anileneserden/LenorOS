@@ -173,12 +173,6 @@ void kernel_main(uint32_t mboot_magic, uint32_t* mboot_info_addr) {
     app_manager_init();
     fb_swap();
 
-    if (lex2_load_and_run("C:/Lenor/System32/cmd.lex")) {
-        serial_write("html-parser uygulamasi basariyla calistirildi!\n");
-    } else {
-        serial_write("HATA: html-parser uygulamasi yuklenemedi!\n");
-    }
-
     // 6. AC97 audio driver initialization
     if (ac97_init() == 0) {
         ac97_set_master_volume(100);
