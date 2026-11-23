@@ -112,7 +112,6 @@ $(DISK_FAT32):
 	@mkdir -p $(dir $@)
 	dd if=/dev/zero of=$@ bs=1M count=16
 
-# QEMU'yu UEFI modunda çalıştırmak için -bios ekledik
 run: iso $(DISK_LNRFS) $(DISK_FAT32)
 	qemu-system-x86_64 \
 	   -bios /usr/share/edk2/x64/OVMF.4m.fd \
@@ -131,4 +130,5 @@ run: iso $(DISK_LNRFS) $(DISK_FAT32)
 	   -device usb-host,vendorid=0x0bda,productid=0x8179 \
 	   -netdev user,id=net0 -device e1000,netdev=net0 \
 	   -rtc base=localtime \
-	   -serial stdio -vga std -display gtk,gl=on
+	   -serial stdio -vga std -display gtk,gl=on \
+	   2>&1 | sed -u -E 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/\r//g' | tee /tmp/lenoros_run.log
